@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "thefranceway-agent-platform"
+version = "1.0.0"
+description = "Multi-agent platform with MABP behavioral profiles, MetaClaw skill injection, and verified execution layer"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [
+  { name = "Francesca Ranieri", email = "thefranceway@gmail.com" }
+]
+keywords = ["agent", "llm", "anthropic", "multi-agent", "mabp"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: Apache Software License",
+]
+dependencies = [
+  "anthropic>=0.40.0",
+  "certifi>=2024.1.0",
+  "fastapi>=0.115.0",
+  "requests>=2.32.0",
+  "python-dotenv>=1.0.0",
+  "uvicorn>=0.32.0",
+]
+
+[project.optional-dependencies]
+langsmith   = ["langsmith>=0.1.0"]
+telegram    = ["telethon>=1.36.0"]
+embeddings  = ["sentence-transformers>=2.0.0"]
+
+[project.urls]
+Homepage   = "https://github.com/thefranceway/thefranceway-agent-platform"
+Repository = "https://github.com/thefranceway/thefranceway-agent-platform"
+
+[tool.setuptools.packages.find]
+include = ["core*", "agents*", "services*", "scripts*"]
