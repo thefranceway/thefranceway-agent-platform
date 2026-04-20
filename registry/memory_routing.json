@@ -1,0 +1,18 @@
+{
+  "_comment": "Selective cross-KB reads per agent. Each agent searches its own KB + kb_shared + these.",
+  "Telegram Inbox Agent":      ["kb_coaching"],
+  "Morning Briefing Agent":    ["kb_longevity", "kb_coaching", "kb_ops"],
+  "Life Coach Agent":          ["kb_coaching", "kb_telegram_inbox"],
+  "Work Coach Agent":          ["kb_coaching", "kb_ops"],
+  "Content Strategist":        ["kb_longevity", "kb_ops"],
+  "Longevity Research Agent":  ["kb_content_strategist", "kb_desci_news"],
+  "RAG Agent":                 ["kb_longevity", "kb_desci_news"],
+  "Coasys Watcher":            ["kb_desci_news", "kb_longevity"],
+  "Python Expert":             ["kb_typescript", "kb_solana"],
+  "TypeScript Expert":         ["kb_python", "kb_solana"],
+  "Solana Expert":             ["kb_typescript", "kb_python"],
+  "Memory Agent":              ["kb_builder", "kb_ops", "kb_meta", "kb_python", "kb_typescript",
+                                "kb_solana", "kb_longevity", "kb_content_strategist",
+                                "kb_desci_news", "kb_data_analytics", "kb_telegram_inbox",
+                                "kb_coaching"]
+}

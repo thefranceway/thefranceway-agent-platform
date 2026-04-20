@@ -1,0 +1,8 @@
+anthropic>=0.40.0
+certifi>=2024.1.0
+fastapi>=0.115.0
+langsmith>=0.1.0
+python-dotenv>=1.0.0
+requests>=2.32.0
+telethon>=1.36.0
+uvicorn>=0.32.0
