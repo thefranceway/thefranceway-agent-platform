@@ -1,6 +1,22 @@
 # The Franceway Agent Platform
 
+[![PyPI](https://img.shields.io/pypi/v/thefranceway-agent-platform)](https://pypi.org/project/thefranceway-agent-platform/)
+[![License](https://img.shields.io/badge/license-Apache%202.0-5B5BD6)](https://www.apache.org/licenses/LICENSE-2.0)
+[![Python](https://img.shields.io/badge/python-3.11+-blue)](https://pypi.org/project/thefranceway-agent-platform/)
+
 A production multi-agent system built on the Anthropic SDK. Agents have behavioral profiles, persistent memory, self-improving skill libraries, and a verified execution layer. Runs on a MacBook Pro M1 with Cloudflare Workers as the dispatch and scheduling layer.
+
+## Quick Install
+
+```bash
+pip install thefranceway-agent-platform
+```
+
+**For Claude Code / Cursor agents:**
+
+```bash
+curl -sSL https://raw.githubusercontent.com/thefranceway/thefranceway-agent-platform/main/install.sh | bash
+```
 
 ---
 
