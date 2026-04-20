@@ -1,0 +1,35 @@
+# Runtime data — not source
+registry/runs.json
+registry/agent_platform.db
+registry/vector_store/
+registry/git_content_pending.json
+registry/git_content_state.json
+
+# Logs
+logs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+python-cli-project/.venv/
+
+# macOS
+.DS_Store
+.AppleDouble
+
+# Cloudflare
+.wrangler/
+
+# Node
+node_modules/
+workers/*/node_modules/
+
+# Local env overrides
+.env
+.env.*
+*.env

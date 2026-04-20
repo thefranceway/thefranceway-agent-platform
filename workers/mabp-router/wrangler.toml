@@ -1,0 +1,13 @@
+name = "mabp-router"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[[kv_namespaces]]
+binding = "RATE_LIMIT_KV"
+id      = "fdb12d5788074a4aaa57ce9dc6ce4b09"
+
+[vars]
+BACKEND_URL = "https://api.thefranceway.com"
+
+# Set secrets via CLI (never in this file):
+# wrangler secret put RAPIDAPI_PROXY_SECRET

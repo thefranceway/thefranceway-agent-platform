@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Brain Graph — thefranceway</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #050508;
+  --glass-bg: rgba(255,255,255,0.03);
+  --glass-border: rgba(255,255,255,0.08);
+  --glass-highlight: rgba(255,255,255,0.18);
+  --text: rgba(255,255,255,0.9);
+  --muted: rgba(255,255,255,0.45);
+  --muted2: rgba(255,255,255,0.25);
+  --font: -apple-system, 'Segoe UI', sans-serif;
+}
+
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--font); }
+
+#canvas { width: 100vw; height: 100vh; cursor: crosshair; display: block; position: fixed; top: 0; left: 0; }
+
+.glass {
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  background: linear-gradient(145deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.01) 100%);
+  border: 1px solid var(--glass-border);
+  border-top: 1px solid var(--glass-highlight);
+  border-left: 1px solid var(--glass-highlight);
+  box-shadow: 0 20px 40px rgba(0,0,0,0.5), inset 0 0 20px rgba(255,255,255,0.02);
+  border-radius: 20px;
+  position: fixed;
+  overflow: hidden;
+  transition: all 0.35s cubic-bezier(0.25,0.8,0.25,1);
+  z-index: 100;
+}
+.glass::before {
+  content: '';
+  position: absolute;
+  top: 0; left: -100%;
+  width: 100%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent);
+  transform: skewX(-15deg);
+  transition: 0.6s;
+  pointer-events: none;
+}
+.glass:hover { background: linear-gradient(145deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 100%); border-color: rgba(255,255,255,0.14); }
+.glass:hover::before { left: 150%; }
+
+#legend { top: 28px; left: 28px; padding: 22px 24px; width: 210px; }
+#legend h4 { font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; }
+.leg-section { margin-top: 16px; }
+.leg-item { display: flex; align-items: center; gap: 10px; margin: 7px 0; font-size: 13px; font-weight: 300; color: var(--muted); }
+.leg-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.leg-line { width: 18px; height: 2px; border-radius: 1px; flex-shrink: 0; }
+
+#stats { top: 28px; right: 28px; padding: 22px 26px; width: 160px; text-align: center; }
+.stat { margin: 10px 0; }
+.stat .n { font-size: 28px; font-weight: 500; color: var(--text); display: block; letter-spacing: -0.02em; }
+.stat .l { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted2); }
+
+#memscore { bottom: 28px; right: 28px; padding: 18px 26px; text-align: center; }
+#memscore .score { font-size: 36px; font-weight: 500; letter-spacing: -0.03em; background: linear-gradient(135deg, #fff 30%, #a5b4fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+#memscore .label { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted2); margin-top: 2px; }
+
+#title { bottom: 28px; left: 50%; transform: translateX(-50%); font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: var(--muted2); pointer-events: none; position: fixed; white-space: nowrap; z-index: 100; }
+
+#tip { position: fixed; pointer-events: none; opacity: 0; transition: opacity 0.18s; z-index: 200; padding: 16px 20px; width: 260px; }
+#tip.on { opacity: 1; }
+#tip h3 { font-size: 14px; font-weight: 500; margin-bottom: 10px; background: linear-gradient(135deg, #fff 40%, #a5b4fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.tip-row { display: flex; justify-content: space-between; font-size: 12px; font-weight: 300; margin: 4px 0; }
+.tip-row .tl { color: var(--muted); }
+.tip-row .tv { color: var(--text); }
+.tip-row .tv.g { color: #4ade80; }
+.tip-row .tv.r { color: #f87171; }
+.tip-tools { font-size: 10px; color: var(--muted2); margin-top: 8px; line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+
+<!-- Legend -->
+<div class="glass" id="legend">
+  <h4>Behavioral Profile</h4>
+  <div class="leg-item"><div class="leg-dot" style="background:radial-gradient(circle at 30% 30%,#818cf8,#4338ca);box-shadow:0 0 8px #6366f180"></div>Architect (S2)</div>
+  <div class="leg-item"><div class="leg-dot" style="background:radial-gradient(circle at 30% 30%,#34d399,#065f46);box-shadow:0 0 8px #10b98180"></div>Substrate (S4)</div>
+  <div class="leg-item"><div class="leg-dot" style="background:radial-gradient(circle at 30% 30%,#c084fc,#6b21a8);box-shadow:0 0 8px #a855f780"></div>Philosopher (S3)</div>
+  <div class="leg-item"><div class="leg-dot" style="background:radial-gradient(circle at 30% 30%,#fbbf24,#92400e);box-shadow:0 0 8px #f59e0b80"></div>Agent (S5)</div>
+  <div class="leg-section">
+    <h4>Memory</h4>
+    <div class="leg-item"><div class="leg-dot" style="background:radial-gradient(circle at 30% 30%,#60a5fa,#1e3a8a);box-shadow:0 0 6px #3b82f680"></div>KB Node</div>
+    <div class="leg-item"><div class="leg-dot" style="background:radial-gradient(circle at 30% 30%,#22d3ee,#164e63);box-shadow:0 0 8px #06b6d480"></div>Shared KB</div>
+  </div>
+  <div class="leg-section">
+    <h4>Model Tier</h4>
+    <div class="leg-item"><div class="leg-line" style="background:linear-gradient(90deg,#818cf8,#4338ca)"></div>Sonnet</div>
+    <div class="leg-item"><div class="leg-line" style="background:linear-gradient(90deg,#34d399,#065f46)"></div>Haiku</div>
+    <div class="leg-item"><div class="leg-line" style="background:linear-gradient(90deg,#c084fc,#6b21a8)"></div>Gemini</div>
+  </div>
+</div>
+
+<!-- Stats -->
+<div class="glass" id="stats">
+  <div class="stat"><span class="n">19</span><span class="l">Agents</span></div>
+  <div class="stat"><span class="n">94</span><span class="l">Runs</span></div>
+  <div class="stat"><span class="n">239</span><span class="l">Embeddings</span></div>
+</div>
+
+<!-- Memory Score -->
+<div class="glass" id="memscore">
+  <div class="score">94.7%</div>
+  <div class="label">Longmem Eval</div>
+</div>
+
+<!-- Title -->
+<div id="title">thefranceway &middot; agent brain graph &middot; 2026</div>
+
+<!-- Tooltip -->
+<div class="glass" id="tip"></div>
+
+<script>
+const AGENTS = [{"id":"Builder Agent","type":"builder","profile":"Architect","shadow_code":"S2","model":"claude-sonnet-4-6","kb":"kb_builder","enabled":true,"runs":3,"kb_docs":5,"shadow_events":0,"top_tools":[["write_file",19],["bash_exec",15],["recall",3]]},{"id":"Ops Agent","type":"ops","profile":"Substrate","shadow_code":"S4","model":"claude-sonnet-4-6","kb":"kb_ops","enabled":true,"runs":6,"kb_docs":11,"shadow_events":0,"top_tools":[["remember",5],["check_all_sites",4],["http_check",2]]},{"id":"Meta Agent","type":"meta","profile":"Agent","shadow_code":"S5","model":"claude-sonnet-4-6","kb":"kb_meta","enabled":true,"runs":2,"kb_docs":4,"shadow_events":2,"top_tools":[["recall",3],["create_agent_spec",2],["register_agent",2]]},{"id":"Python Expert","type":"coding_expert","profile":"Architect","shadow_code":"S2","model":"claude-sonnet-4-6","kb":"kb_python","enabled":true,"runs":1,"kb_docs":7,"shadow_events":0,"top_tools":[["run_python",4],["recall",1]]},{"id":"TypeScript Expert","type":"coding_expert","profile":"Architect","shadow_code":"S2","model":"claude-sonnet-4-6","kb":"kb_typescript","enabled":true,"runs":2,"kb_docs":10,"shadow_events":0,"top_tools":[["write_file",6],["recall",3]]},{"id":"Longevity Research Agent","type":"research","profile":"Philosopher","shadow_code":"S3","model":"claude-sonnet-4-6","kb":"kb_longevity","enabled":true,"runs":3,"kb_docs":53,"shadow_events":2,"top_tools":[["fetch_pubmed",19],["recall",3],["remember",3]]},{"id":"Solana Expert","type":"coding_expert","profile":"Agent","shadow_code":"S5","model":"claude-sonnet-4-6","kb":"kb_solana","enabled":true,"runs":2,"kb_docs":10,"shadow_events":0,"top_tools":[["recall",4],["rpc_call",2]]},{"id":"Content Strategist","type":"research","profile":"Philosopher","shadow_code":"S3","model":"claude-sonnet-4-6","kb":"kb_content_strategist","enabled":true,"runs":3,"kb_docs":11,"shadow_events":0,"top_tools":[["recall_content_history",3],["post_to_moltbook",3]]},{"id":"Memory Agent","type":"meta","profile":"Agent","shadow_code":"S5","model":"gemini-2.0-flash","kb":"kb_memory_agent","enabled":true,"runs":3,"kb_docs":5,"shadow_events":0,"top_tools":[["search_memory",4],["read_run_history",3]]},{"id":"Data Analytics Agent","type":"builder","profile":"Architect","shadow_code":"S2","model":"gemini-2.0-flash","kb":"kb_data_analytics","enabled":true,"runs":2,"kb_docs":9,"shadow_events":0,"top_tools":[["recall",4],["fetch_token_data",2]]},{"id":"Telegram Inbox Agent","type":"ops","profile":"Substrate","shadow_code":"S4","model":"claude-haiku-4-5-20251001","kb":"kb_telegram_inbox","enabled":true,"runs":37,"kb_docs":75,"shadow_events":0,"top_tools":[["recall",39],["classify_message",37],["send_draft_to_owner",37]]},{"id":"AuraSci Group Agent","type":"ops","profile":"Philosopher","shadow_code":"P3","model":"claude-haiku-4-5-20251001","kb":"kb_aurasci_group","enabled":false,"runs":27,"kb_docs":31,"shadow_events":0,"top_tools":[["recall",26],["post_reply",25]]},{"id":"Brand Mention Monitor","type":"monitoring","profile":"Agent","shadow_code":"?","model":"claude-haiku-4-5-20251001","kb":"kb_brand","enabled":true,"runs":0,"kb_docs":0,"shadow_events":0,"top_tools":[]},{"id":"BrandSentinelAgent","type":"monitoring","profile":"Agent","shadow_code":"?","model":"claude-sonnet-4-6","kb":"kb_sentinel","enabled":false,"runs":0,"kb_docs":0,"shadow_events":0,"top_tools":[]},{"id":"Morning Briefing Agent","type":"ops","profile":"Substrate","shadow_code":"S4","model":"claude-haiku-4-5-20251001","kb":"kb_coaching","enabled":true,"runs":0,"kb_docs":0,"shadow_events":0,"top_tools":[]},{"id":"Life Coach Agent","type":"ops","profile":"Philosopher","shadow_code":"S3","model":"claude-sonnet-4-6","kb":"kb_coaching","enabled":false,"runs":0,"kb_docs":0,"shadow_events":0,"top_tools":[]},{"id":"Work Coach Agent","type":"ops","profile":"Architect","shadow_code":"S2","model":"claude-sonnet-4-6","kb":"kb_coaching","enabled":false,"runs":0,"kb_docs":0,"shadow_events":0,"top_tools":[]},{"id":"RAG Agent","type":"research","profile":"Philosopher","shadow_code":"S3","model":"claude-sonnet-4-6","kb":"kb_research","enabled":true,"runs":0,"kb_docs":0,"shadow_events":0,"top_tools":[]},{"id":"Coasys Watcher","type":"coasys_watcher","profile":"Substrate","shadow_code":"S4","model":"claude-sonnet-4-6","kb":"kb_coasys","enabled":true,"runs":0,"kb_docs":0,"shadow_events":0,"top_tools":[]}];
+
+const PROFILE = {
+  Architect:   { color: '#818cf8', glow: '#6366f1', dark: '#3730a3' },
+  Substrate:   { color: '#34d399', glow: '#10b981', dark: '#065f46' },
+  Philosopher: { color: '#c084fc', glow: '#a855f7', dark: '#6b21a8' },
+  Agent:       { color: '#fbbf24', glow: '#f59e0b', dark: '#92400e' },
+};
+
+const MODEL_COLOR = {
+  'claude-sonnet-4-6':        '#818cf8',
+  'claude-haiku-4-5-20251001':'#34d399',
+  'gemini-2.0-flash':         '#c084fc',
+};
+
+const ROUTING = {
+  'Telegram Inbox Agent':     ['kb_coaching'],
+  'Morning Briefing Agent':   ['kb_longevity','kb_coaching','kb_ops'],
+  'Content Strategist':       ['kb_longevity','kb_ops'],
+  'Longevity Research Agent': ['kb_content_strategist'],
+  'Python Expert':            ['kb_typescript','kb_solana'],
+  'TypeScript Expert':        ['kb_python','kb_solana'],
+  'Solana Expert':            ['kb_typescript','kb_python'],
+};
+
+// ── Canvas setup ──
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W = window.innerWidth, H = window.innerHeight;
+canvas.width = W; canvas.height = H;
+
+window.addEventListener('resize', () => {
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W; canvas.height = H;
+});
+
+// ── Build node list ──
+const kbMap = {};
+AGENTS.forEach(a => {
+  if (!a.kb) return;
+  if (!kbMap[a.kb]) kbMap[a.kb] = { id: a.kb, nodeType: 'kb', docs: 0, agentCount: 0 };
+  kbMap[a.kb].agentCount++;
+  if (a.kb_docs > kbMap[a.kb].docs) kbMap[a.kb].docs = a.kb_docs;
+});
+kbMap['kb_shared'] = { id: 'kb_shared', nodeType: 'shared_kb', docs: 4, agentCount: AGENTS.length };
+
+// ── Radial cluster layout ──
+// 4 behavioral profiles arranged at diagonal quadrants around center
+const CLUSTER_ANGLE = {
+  Architect:  -Math.PI / 4,      // top-right
+  Agent:      -3 * Math.PI / 4,  // top-left
+  Substrate:   Math.PI / 4,      // bottom-right
+  Philosopher: 3 * Math.PI / 4,  // bottom-left
+};
+const CLUSTER_R = Math.min(W, H) * 0.30; // 30% of shortest dimension
+const AGENT_SPREAD = Math.min(W, H) * 0.11;
+
+function clusterCenter(profile) {
+  const a = CLUSTER_ANGLE[profile] ?? 0;
+  return { x: W/2 + CLUSTER_R * Math.cos(a), y: H/2 + CLUSTER_R * Math.sin(a) };
+}
+
+// Group agents by profile to space them within cluster
+const profileGroups = {};
+AGENTS.forEach(a => { (profileGroups[a.profile] = profileGroups[a.profile] || []).push(a.id); });
+
+const agentNodes = AGENTS.map(a => {
+  const group = profileGroups[a.profile] || [];
+  const idx = group.indexOf(a.id);
+  const n = group.length;
+  const cc = clusterCenter(a.profile);
+  // Spread agents evenly in a circle around their cluster center
+  const spreadAngle = n > 1 ? (idx / n) * Math.PI * 2 : 0;
+  return {
+    ...a,
+    nodeType: 'agent',
+    r: Math.max(11, Math.min(28, 9 + Math.sqrt(a.runs) * 2.8)),
+    x: cc.x + AGENT_SPREAD * Math.cos(spreadAngle),
+    y: cc.y + AGENT_SPREAD * Math.sin(spreadAngle),
+    vx: 0, vy: 0, fx: null, fy: null,
+  };
+});
+
+const agentNodeById = {};
+agentNodes.forEach(n => agentNodeById[n.id] = n);
+
+const kbNodes = Object.values(kbMap).map(k => {
+  if (k.nodeType === 'shared_kb') {
+    // Pin kb_shared at exact center
+    return { ...k, r: 18, x: W/2, y: H/2, vx: 0, vy: 0, fx: W/2, fy: H/2 };
+  }
+  // Position KB node between its agent and center (inner ring)
+  const owner = agentNodes.find(a => a.kb === k.id);
+  let kx, ky;
+  if (owner) {
+    kx = owner.x * 0.42 + W/2 * 0.58;
+    ky = owner.y * 0.42 + H/2 * 0.58;
+  } else {
+    const a = Math.random() * Math.PI * 2;
+    kx = W/2 + CLUSTER_R * 0.45 * Math.cos(a);
+    ky = H/2 + CLUSTER_R * 0.45 * Math.sin(a);
+  }
+  return { ...k, r: Math.max(5, Math.min(16, 4 + Math.sqrt(k.docs) * 1.4)), x: kx, y: ky, vx: 0, vy: 0, fx: null, fy: null };
+});
+
+const nodes = [...agentNodes, ...kbNodes];
+const nodeById = {};
+nodes.forEach(n => nodeById[n.id] = n);
+
+// ── Build links ──
+const links = [];
+AGENTS.forEach(a => {
+  if (!a.kb) return;
+  links.push({ source: a.id, target: a.kb, type: 'kb', model: a.model });
+});
+Object.entries(ROUTING).forEach(([agent, kbs]) => {
+  kbs.forEach(kb => {
+    if (kbMap[kb]) links.push({ source: agent, target: kb, type: 'cross', model: null });
+  });
+});
+AGENTS.filter(a => a.enabled && a.runs > 0).forEach(a => {
+  links.push({ source: a.id, target: 'kb_shared', type: 'shared' });
+});
+
+// Resolve links to node objects
+const resolvedLinks = links.map(l => ({
+  ...l,
+  source: nodeById[l.source],
+  target: nodeById[l.target],
+})).filter(l => l.source && l.target);
+
+// ── Force simulation (vanilla) ──
+let alpha = 1.0;
+const ALPHA_DECAY = 0.018;
+const ALPHA_MIN = 0.001;
+
+function tick() {
+  if (alpha < ALPHA_MIN) return;
+  alpha *= (1 - ALPHA_DECAY);
+
+  // Repulsion
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const a = nodes[i], b = nodes[j];
+      let dx = b.x - a.x, dy = b.y - a.y;
+      const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+      const str = (a.nodeType === 'agent' ? 500 : 120) * alpha;
+      const f = str / (dist * dist);
+      const fx = (dx/dist)*f, fy = (dy/dist)*f;
+      if (!a.fx) { a.vx -= fx; a.vy -= fy; }
+      if (!b.fx) { b.vx += fx; b.vy += fy; }
+    }
+  }
+
+  // Spring along edges
+  resolvedLinks.forEach(l => {
+    const s = l.source, t = l.target;
+    if (!s || !t) return;
+    const dx = t.x - s.x, dy = t.y - s.y;
+    const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+    const targetDist = l.type === 'shared' ? 280 : l.type === 'cross' ? 200 : 150;
+    const str = (l.type === 'shared' ? 0.04 : l.type === 'cross' ? 0.06 : 0.35) * alpha;
+    const disp = (dist - targetDist) / dist * str;
+    const fx = dx * disp, fy = dy * disp;
+    if (!s.fx) { s.vx += fx; s.vy += fy; }
+    if (!t.fx) { t.vx -= fx; t.vy -= fy; }
+  });
+
+  // Center gravity
+  nodes.forEach(n => {
+    if (!n.fx) n.vx += (W/2 - n.x) * 0.001 * alpha;
+    if (!n.fy) n.vy += (H/2 - n.y) * 0.001 * alpha;
+  });
+
+  // Cluster attraction — pull each agent toward its profile cluster center
+  agentNodes.forEach(n => {
+    if (n.fx !== null) return;
+    const cc = clusterCenter(n.profile);
+    n.vx += (cc.x - n.x) * 0.012 * alpha;
+    n.vy += (cc.y - n.y) * 0.012 * alpha;
+  });
+
+  // Collision
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const a = nodes[i], b = nodes[j];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+      const minD = a.r + b.r + 8;
+      if (dist < minD) {
+        const overlap = (minD - dist) / dist * 0.5;
+        if (!a.fx) { a.vx -= dx * overlap; a.vy -= dy * overlap; }
+        if (!b.fx) { b.vx += dx * overlap; b.vy += dy * overlap; }
+      }
+    }
+  }
+
+  // Integrate
+  nodes.forEach(n => {
+    if (n.fx !== null) { n.x = n.fx; n.vx = 0; }
+    else { n.vx *= 0.7; n.x += n.vx; }
+    if (n.fy !== null) { n.y = n.fy; n.vy = 0; }
+    else { n.vy *= 0.7; n.y += n.vy; }
+  });
+}
+
+// ── Zoom / Pan state ──
+let panX = 0, panY = 0, scale = 1;
+let isPanning = false, panStart = {x:0,y:0};
+let dragNode = null;
+
+function screenToWorld(sx, sy) {
+  return { x: (sx - panX) / scale, y: (sy - panY) / scale };
+}
+
+function nodeAt(wx, wy) {
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    const n = nodes[i];
+    const dx = n.x - wx, dy = n.y - wy;
+    if (Math.sqrt(dx*dx+dy*dy) < n.r + 4) return n;
+  }
+  return null;
+}
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.1 : 0.9;
+  const mx = e.clientX, my = e.clientY;
+  panX = mx - (mx - panX) * factor;
+  panY = my - (my - panY) * factor;
+  scale = Math.max(0.2, Math.min(4, scale * factor));
+}, { passive: false });
+
+canvas.addEventListener('mousedown', e => {
+  const w = screenToWorld(e.clientX, e.clientY);
+  const n = nodeAt(w.x, w.y);
+  if (n) {
+    dragNode = n;
+    n.fx = n.x; n.fy = n.y;
+    alpha = Math.max(alpha, 0.3);
+  } else {
+    isPanning = true;
+    panStart = { x: e.clientX - panX, y: e.clientY - panY };
+  }
+});
+
+canvas.addEventListener('mousemove', e => {
+  if (dragNode) {
+    const w = screenToWorld(e.clientX, e.clientY);
+    dragNode.fx = w.x; dragNode.fy = w.y;
+    alpha = Math.max(alpha, 0.1);
+  } else if (isPanning) {
+    panX = e.clientX - panStart.x;
+    panY = e.clientY - panStart.y;
+  }
+  // Tooltip
+  const w = screenToWorld(e.clientX, e.clientY);
+  const n = nodeAt(w.x, w.y);
+  if (n) {
+    showTip(e, n);
+    canvas.style.cursor = 'grab';
+  } else {
+    hideTip();
+    canvas.style.cursor = isPanning ? 'grabbing' : 'crosshair';
+  }
+});
+
+canvas.addEventListener('mouseup', e => {
+  if (dragNode) { dragNode.fx = null; dragNode.fy = null; dragNode = null; }
+  isPanning = false;
+});
+
+canvas.addEventListener('mouseleave', () => { hideTip(); isPanning = false; });
+
+// ── Tooltip ──
+const tip = document.getElementById('tip');
+function showTip(e, d) {
+  if (d.nodeType === 'agent') {
+    tip.innerHTML = `
+      <h3>${d.id}</h3>
+      <div class="tip-row"><span class="tl">Profile</span><span class="tv">${d.profile} &middot; ${d.shadow_code}</span></div>
+      <div class="tip-row"><span class="tl">Model</span><span class="tv">${d.model.split('-').slice(0,2).join('-')}</span></div>
+      <div class="tip-row"><span class="tl">Runs</span><span class="tv ${d.runs>0?'g':''}">${d.runs}</span></div>
+      <div class="tip-row"><span class="tl">KB docs</span><span class="tv">${d.kb_docs}</span></div>
+      <div class="tip-row"><span class="tl">Shadow events</span><span class="tv ${d.shadow_events>0?'r':'g'}">${d.shadow_events}</span></div>
+      <div class="tip-row"><span class="tl">Status</span><span class="tv ${d.enabled?'g':'r'}">${d.enabled?'active':'disabled'}</span></div>
+      ${(()=>{ const c=costData[d.id]; if(!c||!c.cost_usd) return ''; return `<div class="tip-row"><span class="tl">Spend</span><span class="tv" style="color:#f97316">$${c.cost_usd.toFixed(4)} &middot; ${(c.tokens_in+c.tokens_out).toLocaleString()} tok</span></div>`; })()}
+      ${(()=>{ const h=healthData[d.id]; if(!h) return ''; const c=h.status==='healthy'?'g':h.status==='error'?'r':''; const age=h.age_hours<1?'<1h ago':h.age_hours<24?Math.round(h.age_hours)+'h ago':Math.round(h.age_hours/24)+'d ago'; return `<div class="tip-row"><span class="tl">Health</span><span class="tv ${c}">${h.status} &middot; ${age}</span></div><div class="tip-row"><span class="tl">This week</span><span class="tv">${h.runs_7d||0} runs</span></div>${h.error?`<div class="tip-row"><span class="tl">Error</span><span class="tv r" style="font-size:9px">${h.error}</span></div>`:''}`;})()}
+      ${d.top_tools.length?`<div class="tip-tools">${d.top_tools.slice(0,3).map(t=>t[0]+' \xd7'+t[1]).join(' &middot; ')}</div>`:''}
+    `;
+  } else {
+    tip.innerHTML = `
+      <h3>${d.id}</h3>
+      <div class="tip-row"><span class="tl">Type</span><span class="tv">${d.nodeType==='shared_kb'?'Shared Episodic KB':'Knowledge Base'}</span></div>
+      <div class="tip-row"><span class="tl">Docs</span><span class="tv ${d.docs>0?'g':''}">${d.docs}</span></div>
+    `;
+  }
+  tip.classList.add('on');
+  const x = e.clientX + 18, y = e.clientY - 12;
+  tip.style.left = Math.min(x, W - 280) + 'px';
+  tip.style.top  = Math.min(y, H - 200) + 'px';
+}
+function hideTip() { tip.classList.remove('on'); }
+
+// ── Draw ──
+let animT = 0;
+function draw(ts) {
+  animT = ts || 0;
+  ctx.clearRect(0, 0, W, H);
+  ctx.save();
+  ctx.translate(panX, panY);
+  ctx.scale(scale, scale);
+
+  // Links
+  resolvedLinks.forEach(l => {
+    const s = l.source, t = l.target;
+    if (!s || !t) return;
+    ctx.beginPath();
+    ctx.moveTo(s.x, s.y);
+    ctx.lineTo(t.x, t.y);
+    if (l.type === 'shared') {
+      ctx.strokeStyle = 'rgba(34,211,238,0.18)';
+      ctx.setLineDash([3, 4]);
+      ctx.lineWidth = 0.7;
+    } else if (l.type === 'cross') {
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.setLineDash([3, 4]);
+      ctx.lineWidth = 0.5;
+    } else {
+      const mc = MODEL_COLOR[l.model] || '#444';
+      ctx.strokeStyle = mc + '59';
+      ctx.setLineDash([]);
+      ctx.lineWidth = 1.0;
+    }
+    ctx.stroke();
+  });
+  ctx.setLineDash([]);
+
+  // KB nodes
+  kbNodes.forEach(d => drawKB(d));
+
+  // Agent nodes
+  agentNodes.forEach(d => drawAgent(d));
+
+  ctx.restore();
+
+  // Legend (screen-space — drawn after ctx.restore so it ignores pan/zoom)
+  drawHealthLegend();
+
+  requestAnimationFrame(t => { tick(); draw(t); });
+}
+
+function drawHealthLegend() {
+  const items = [
+    { color: '#22c55e', label: 'Healthy' },
+    { color: '#ef4444', label: 'Error' },
+    { color: '#6b7280', label: 'Stale (>24h)' },
+    { color: '#334155', label: 'No run data', dash: true },
+    { color: '#f97316', label: 'Glow = spend' },
+  ];
+  const px = 18, py = H - 18 - items.length * 20;
+  ctx.save();
+  ctx.globalAlpha = 0.75;
+  ctx.fillStyle = 'rgba(10,14,26,0.72)';
+  ctx.beginPath();
+  ctx.roundRect(px - 8, py - 8, 130, items.length * 20 + 14, 6);
+  ctx.fill();
+  items.forEach((it, i) => {
+    const y = py + i * 20 + 6;
+    ctx.beginPath();
+    ctx.arc(px + 6, y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = it.color;
+    ctx.fill();
+    if (it.dash) {
+      ctx.strokeStyle = '#6b7280';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([3, 2]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.font = '10px -apple-system,sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(it.label, px + 16, y);
+  });
+  ctx.restore();
+}
+
+function drawKB(d) {
+  const isShared = d.nodeType === 'shared_kb';
+  ctx.save();
+  ctx.translate(d.x, d.y);
+
+  // Outer ring
+  ctx.beginPath();
+  ctx.arc(0, 0, d.r + 4, 0, Math.PI*2);
+  ctx.fillStyle = isShared ? 'rgba(34,211,238,0.08)' : 'rgba(96,165,250,0.06)';
+  ctx.fill();
+  ctx.strokeStyle = isShared ? 'rgba(34,211,238,0.3)' : 'rgba(96,165,250,0.2)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Glow
+  if (isShared) { ctx.shadowColor = '#22d3ee'; ctx.shadowBlur = 10; }
+
+  // Main circle
+  const g = ctx.createRadialGradient(-d.r*0.3, -d.r*0.3, 0, 0, 0, d.r);
+  if (isShared) { g.addColorStop(0,'#22d3ee'); g.addColorStop(1,'#164e63'); }
+  else          { g.addColorStop(0,'#60a5fa'); g.addColorStop(1,'#1e3a8a'); }
+  ctx.beginPath();
+  ctx.arc(0, 0, d.r, 0, Math.PI*2);
+  ctx.fillStyle = g;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Doc count
+  if (d.docs > 0) {
+    ctx.fillStyle = 'rgba(255,255,255,0.65)';
+    ctx.font = '400 8px -apple-system,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(d.docs, 0, 0);
+  }
+
+  // Label
+  ctx.fillStyle = isShared ? 'rgba(34,211,238,0.7)' : 'rgba(255,255,255,0.22)';
+  ctx.font = '300 9px -apple-system,sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText(d.id.replace('kb_','').replace(/_/g,' '), 0, d.r + 5);
+
+  ctx.restore();
+}
+
+function drawAgent(d) {
+  const p = PROFILE[d.profile] || PROFILE.Agent;
+  const opacity = d.enabled ? 1 : 0.18;
+  ctx.save();
+  ctx.globalAlpha = opacity;
+  ctx.translate(d.x, d.y);
+
+  // Cost heatmap glow — warm amber outer aura, intensity ∝ spend
+  const cost = costData[d.id];
+  if (cost && cost.cost_usd > 0 && maxCost > 0) {
+    const norm = Math.sqrt(cost.cost_usd / maxCost); // sqrt for perceptual evenness
+    const blur = 10 + norm * 28;
+    ctx.beginPath();
+    ctx.arc(0, 0, d.r + 9 + norm * 6, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(249,115,22,${(0.06 + norm * 0.18).toFixed(3)})`; // #f97316
+    ctx.shadowColor = '#f97316';
+    ctx.shadowBlur  = blur;
+    ctx.fill();
+    ctx.shadowBlur  = 0;
+  }
+
+  // Pulse ring — speed ∝ runs_7d frequency
+  if (d.enabled && d.runs > 0) {
+    const h7 = healthData[d.id];
+    const runs7 = h7 ? (h7.runs_7d || 0) : 0;
+    // maxFreq cap at 20 runs/week so Telegram doesn't dominate completely
+    const freqNorm = Math.min(runs7, 20) / 20;
+    const speed = 0.0008 + freqNorm * 0.005; // slow idle → fast active
+    const pulse = 0.5 + 0.5 * Math.sin(animT * speed + d.x);
+    ctx.beginPath();
+    ctx.arc(0, 0, d.r + 6 + pulse*3, 0, Math.PI*2);
+    ctx.fillStyle = p.glow + Math.round(0x10 + pulse*0x18).toString(16).padStart(2,'0');
+    ctx.fill();
+    ctx.strokeStyle = p.glow + '35';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // Health status ring
+  const health = healthData[d.id];
+  if (health) {
+    const hColor = health.status === 'healthy' ? '#22c55e'
+                 : health.status === 'error'   ? '#ef4444'
+                 : '#6b7280'; // stale
+    ctx.beginPath();
+    ctx.arc(0, 0, d.r + 3, 0, Math.PI * 2);
+    ctx.strokeStyle = hColor;
+    ctx.lineWidth = 2;
+    if (health.status === 'stale') ctx.setLineDash([4, 3]);
+    if (health.status === 'error') { ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 10; }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.shadowBlur = 0;
+  }
+
+  // Shadow event ring (red dashed)
+  if (d.shadow_events > 0) {
+    ctx.shadowColor = '#f87171';
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(0, 0, d.r + 5, 0, Math.PI*2);
+    ctx.strokeStyle = '#f87171';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 3]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.shadowBlur = 0;
+  }
+
+  // Glow
+  if (d.enabled && d.runs > 0) { ctx.shadowColor = p.glow; ctx.shadowBlur = 14; }
+
+  // Main sphere
+  const gr = ctx.createRadialGradient(-d.r*0.25, -d.r*0.25, 0, 0, 0, d.r);
+  gr.addColorStop(0, p.color);
+  gr.addColorStop(1, p.dark);
+  ctx.beginPath();
+  ctx.arc(0, 0, d.r, 0, Math.PI*2);
+  ctx.fillStyle = gr;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Rim
+  ctx.beginPath();
+  ctx.arc(0, 0, d.r, 0, Math.PI*2);
+  ctx.strokeStyle = p.color + '40';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Inner highlight
+  const hi = ctx.createRadialGradient(-d.r*0.2, -d.r*0.2, 0, -d.r*0.2, -d.r*0.2, d.r*0.5);
+  hi.addColorStop(0, 'rgba(255,255,255,0.22)');
+  hi.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.beginPath();
+  ctx.arc(-d.r*0.2, -d.r*0.2, d.r*0.5, 0, Math.PI*2);
+  ctx.fillStyle = hi;
+  ctx.fill();
+
+  // Run count
+  if (d.runs > 0) {
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.font = `500 ${d.r > 18 ? 11 : 9}px -apple-system,sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(d.runs, 0, 0);
+  }
+
+  // Label
+  ctx.fillStyle = d.enabled && d.runs > 0 ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.15)';
+  ctx.font = `300 ${d.runs > 5 ? 10 : 9}px -apple-system,sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText(d.id.replace(' Agent','').replace(' Expert',''), 0, d.r + 5);
+
+  ctx.restore();
+}
+
+// ── Cost heatmap ──
+let costData = {};
+let maxCost  = 0;
+
+async function fetchCost() {
+  try {
+    const res = await fetch('https://api.thefranceway.com/agent-cost', { cache: 'no-store' });
+    if (res.ok) {
+      costData = await res.json();
+      maxCost  = Math.max(...Object.values(costData).map(d => d.cost_usd), 0.0001);
+    }
+  } catch (_) {}
+  setTimeout(fetchCost, 10 * 60 * 1000);
+}
+fetchCost();
+
+// ── Health overlay ──
+let healthData = {};
+
+async function fetchHealth() {
+  try {
+    const res = await fetch('https://api.thefranceway.com/agent-health', { cache: 'no-store' });
+    if (res.ok) healthData = await res.json();
+  } catch (_) {
+    // tunnel down or offline — rings won't show, graph still works
+  }
+  setTimeout(fetchHealth, 5 * 60 * 1000);
+}
+fetchHealth();
+
+requestAnimationFrame(t => { tick(); draw(t); });
+</script>
+</body>
+</html>

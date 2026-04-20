@@ -1,0 +1,12 @@
+logs/
+*.log
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.db
+*.sqlite
+*.sqlite3
+mcp-server/node_modules/
+python-cli-project/
+rate-limiter/
