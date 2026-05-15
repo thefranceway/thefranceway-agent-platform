@@ -34,6 +34,11 @@ from typing import Optional
 import anthropic
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+try:
+    from core.runtime.loader import get_param
+except Exception:
+    def get_param(key, default=None): return default
 from core.agent_registry import get_registry
 from core.task_queue     import get_queue
 
@@ -68,6 +73,25 @@ PROFILE_ROUTING = [
     # Agent signals: autonomous, ongoing, self-directed
     ("meta",       r"\b(autonomous|ongoing|continuously|self-directed|agent|automate|without my input)\b"),
 ]
+
+# ── Feedback helper ───────────────────────────────────────────────────────────
+
+def _run_feedback(result: dict):
+    """Score a dispatch result and auto-tune control_state.json."""
+    try:
+        from core.eval.feedback_loop import apply_feedback
+        score = 80 if "error" not in result else 40
+        failures = []
+        if result.get("error"):
+            failures.append("contradiction")
+        if result.get("context_exceeded"):
+            failures.append("context_bleed")
+        if result.get("hallucination_flag"):
+            failures.append("hallucination")
+        apply_feedback(score, failures)
+    except Exception:
+        pass
+
 
 # ── Agent factory ─────────────────────────────────────────────────────────────
 
@@ -229,7 +253,8 @@ class Orchestrator:
         print(f"[Orchestrator] Routed to: {agent_type} (confidence={routing_confidence})")
 
         # ── SPAR pre-execution gate ────────────────────────────────────────────
-        if not skip_spar and self.complexity_score(task) >= 2:
+        spar_threshold = max(1, round(2 / max(get_param("spar_weight", 1.0), 0.1)))
+        if not skip_spar and self.complexity_score(task) >= spar_threshold:
             from core.spar import SPARDebater
             print(f"[Orchestrator] Complexity score >= 2 — running SPAR review")
             spar = SPARDebater(orchestrator=self)
@@ -269,6 +294,7 @@ class Orchestrator:
                     "iterations": result["iterations"],
                 })
 
+            _run_feedback(result)
             return result
 
         except Exception as e:
@@ -276,17 +302,21 @@ class Orchestrator:
             print(f"[Orchestrator] Error: {error}")
             if task_id:
                 self.queue.fail_task(task_id, error)
-            return {
+            result = {
                 "error":      error,
                 "task":       task,
                 "agent_type": agent_type,
             }
+            _run_feedback(result)
+            return result
 
-    def dispatch_parallel(self, tasks: list[dict], max_workers: int = 3) -> list[dict]:
+    def dispatch_parallel(self, tasks: list[dict], max_workers: int = None) -> list[dict]:
         """
         Dispatch multiple independent tasks in parallel.
         Each item: {"task": str, "agent_type": str (optional)}
         """
+        if max_workers is None:
+            max_workers = get_param("swarm_size", 3)
         results = []
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
