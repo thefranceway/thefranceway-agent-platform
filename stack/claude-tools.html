@@ -1955,7 +1955,7 @@ category: platform|content|crypto|research
         <button class="protocol-head" type="button" aria-expanded="false">
           <div>
             <div class="protocol-title">Self-Improving Stack (GenericAgent patterns)</div>
-            <div class="protocol-sub">Skills auto-crystallize from successful runs · context is pruned before it balloons — two patterns borrowed from GenericAgent</div>
+            <div class="protocol-sub">Skills auto-crystallize from successful runs · context is pruned before it balloons · runtime parameters self-tune after every dispatch — three patterns borrowed from GenericAgent</div>
           </div>
           <div class="protocol-tags"><span class="tag tag-coral">~$0.0004/run</span><span class="protocol-status status-live">Live</span></div>
         </button>
@@ -1967,9 +1967,10 @@ category: platform|content|crypto|research
             <div class="step"><div class="step-num">4</div><div class="step-body"><div class="step-action">Context budget: if messages exceed 6,000 word-proxy tokens, oldest turns are compressed by Haiku before next API call</div><div class="step-tools"><span class="tag tag-green">L0–L4 layered memory · Live</span></div></div></div>
             <div class="step"><div class="step-num">5</div><div class="step-body"><div class="step-action">Tool enforcement: tasks classified as execution-type that produce no python_exec call are prefixed [UNVERIFIED REASONING] in the run record</div><div class="step-tools"><span class="tag tag-coral">_classify_task_type() · execution_verified flag</span></div></div></div>
             <div class="step"><div class="step-num">6</div><div class="step-body"><div class="step-action">Observability: every run record now includes latency_ms, task_type, and execution_verified</div><div class="step-tools"><span class="tag tag-muted">registry/runs.json</span></div></div></div>
+            <div class="step"><div class="step-num">7</div><div class="step-body"><div class="step-action">Runtime feedback loop: after every dispatch, score (success=80 / fail=40) + failure flags (contradiction · context_bleed · hallucination) auto-tune swarm_size, spar_weight, context_strictness, skill_loader_strength in control_state.json</div><div class="step-tools"><span class="tag tag-green">core/eval/feedback_loop.py · Live</span><span class="tag tag-muted">core/runtime/control_state.json</span></div></div></div>
           </div>
           <div class="protocol-note" style="margin-top:16px;font-size:13px;color:var(--muted);line-height:1.6;">
-            Borrowed from <a href="https://github.com/lsdefine/GenericAgent" target="_blank" style="color:var(--accent);">GenericAgent</a>. Key idea: don't preload skills — evolve them. MetaClaw's library grows automatically as agents work. Token cap = 6,000 words (~8K tokens); keep last 6 messages always. <strong style="color:var(--coral);">2026-04-20:</strong> added python_exec sandbox, tool enforcement gating, and latency/task_type observability to BaseAgent.
+            Borrowed from <a href="https://github.com/lsdefine/GenericAgent" target="_blank" style="color:var(--accent);">GenericAgent</a>. Key idea: don't preload skills — evolve them. MetaClaw's library grows automatically as agents work. Token cap = 6,000 words (~8K tokens); context window size is now dynamic (scales with <code style="color:var(--coral);">context_strictness</code>). <strong style="color:var(--coral);">2026-04-20:</strong> python_exec sandbox, tool enforcement gating, latency/task_type observability. <strong style="color:var(--coral);">2026-05-15:</strong> runtime control state + self-tuning feedback loop wired into orchestrator, swarm, skill_loader, and base_agent.
           </div>
         </div>
       </div>
@@ -2213,6 +2214,7 @@ category: platform|content|crypto|research
         <div class="dc"><div class="task" style="color:var(--green);">✓ Sleep Nudge</div><div class="tool" style="font-size:12px;font-weight:400;color:var(--muted);">com.thefranceway.sleep-nudge · osascript · 9pm daily · $0/day</div></div>
         <div class="dc"><div class="task" style="color:var(--green);">✓ Memory System Upgrade</div><div class="tool" style="font-size:12px;font-weight:400;color:var(--muted);">Episodic memory · recency weighting · cross-KB routing · 94.7% longmem eval · consolidation cron 2am/8am/2pm/8pm</div></div>
         <div class="dc"><div class="task" style="color:var(--green);">✓ Brain Graph</div><div class="tool" style="font-size:12px;font-weight:400;color:var(--muted);">Live at <a href="https://thefranceway.pages.dev/brain-graph.html" target="_blank" style="color:var(--coral);">thefranceway.pages.dev/brain-graph.html</a> — 15 agents, KB connections, 94.7% score</div></div>
+        <div class="dc"><div class="task" style="color:var(--green);">✓ Runtime Control State</div><div class="tool" style="font-size:12px;font-weight:400;color:var(--muted);">core/runtime/control_state.json · loader.py · core/eval/feedback_loop.py · wired into orchestrator, swarm, skill_loader, base_agent · self-tunes after every dispatch</div></div>
         <div class="dc"><div class="task" style="color:var(--gold);">→ One step remaining</div><div class="tool" style="font-size:12px;font-weight:400;color:var(--muted);">Run <code style="color:var(--coral);">python scripts/setup_coaching_goals.py</code> to define your goals + OKRs. All agents are wired and waiting.</div></div>
       </div>
     </div>

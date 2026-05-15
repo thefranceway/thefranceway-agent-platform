@@ -25,6 +25,11 @@ from typing import Optional
 
 SKILLS_DIR = Path.home() / ".metaclaw" / "skills"
 
+try:
+    from core.runtime.loader import get_param
+except Exception:
+    def get_param(key, default=None): return default
+
 
 def _parse_frontmatter(text: str) -> tuple[dict, str]:
     """Split SKILL.md into (frontmatter dict, body string)."""
@@ -116,12 +121,15 @@ class SkillLoader:
             sections.append(f"[{name}]\n{content}")
         return "\n\n── Active Skills ──\n" + "\n\n".join(sections)
 
-    def find_relevant(self, task: str, max_skills: int = 3) -> list[str]:
+    def find_relevant(self, task: str, max_skills: int = None) -> list[str]:
         """
         Suggest skill names relevant to a task based on keyword matching
         against skill descriptions and names.
         Returns up to max_skills skill names.
         """
+        if max_skills is None:
+            strength = get_param("skill_loader_strength", 0.7)
+            max_skills = max(1, round(strength * 5))
         task_lower = task.lower()
         scored = []
         for skill in self.list_skills():

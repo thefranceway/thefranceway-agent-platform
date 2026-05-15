@@ -24,6 +24,11 @@ from typing import Optional
 
 import anthropic
 
+try:
+    from core.runtime.loader import get_param as _get_param
+except Exception:
+    def _get_param(key, default=None): return default
+
 # ── Shadow monitor (Level 4) ─────────────────────────────────────────────────
 try:
     from core.shadow_monitor import ShadowMonitor
@@ -640,6 +645,10 @@ class BaseAgent:
         self._shadow_monitor = (
             ShadowMonitor(shadow_code) if ShadowMonitor and shadow_code else None
         )
+
+        # Runtime-tunable context window (shadows class-level CONTEXT_KEEP_LAST_N)
+        strictness = _get_param("context_strictness", 0.5)
+        self.CONTEXT_KEEP_LAST_N = max(2, round(6 + (0.5 - strictness) * 8))
 
         # LangSmith tracing (optional — no-op if key not set)
         self._langsmith_key = os.getenv("LANGSMITH_API_KEY")

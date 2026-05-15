@@ -23,6 +23,11 @@ from typing import Optional
 PLATFORM_DIR = Path(__file__).parent.parent
 DB_PATH      = PLATFORM_DIR / "registry" / "agent_platform.db"
 
+try:
+    from core.runtime.loader import get_param
+except Exception:
+    def get_param(key, default=None): return default
+
 
 def _get_db() -> sqlite3.Connection:
     conn = sqlite3.connect(str(DB_PATH))
@@ -56,7 +61,7 @@ class SwarmCoordinator:
         task: str,
         lead_agent: str,
         worker_agents: list,
-        max_workers: int = 3,
+        max_workers: int = None,
     ) -> dict:
         """
         Lead agent decomposes task → workers execute in parallel → lead synthesizes.
@@ -70,6 +75,8 @@ class SwarmCoordinator:
         Returns:
             dict with keys: topology, task, subtasks, worker_results, synthesis, signals
         """
+        if max_workers is None:
+            max_workers = get_param("swarm_size", 3)
         swarm_id = str(uuid.uuid4())
 
         # Step 1: Lead agent decomposes the task
