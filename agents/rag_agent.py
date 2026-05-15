@@ -5,8 +5,8 @@ Answers questions over ingested documents and stored knowledge.
 Uses: platform memory (recall/remember) + web search for live context synthesis.
 
 Completes the three hire-worthy AI engineering patterns in the thefranceway stack:
-  1. Multi-modal Telegram bot ✓ (TelegramInboxAgent)
-  2. Multi-agent orchestration ✓ (13-agent platform)
+  1. Multi-agent orchestration ✓ (agent platform)
+  2. Runtime self-tuning ✓ (control_state feedback loop)
   3. RAG-based support system ✓ (this agent)
 
 Usage:

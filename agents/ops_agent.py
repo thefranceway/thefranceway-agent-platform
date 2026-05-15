@@ -33,7 +33,6 @@ MONITORED_SITES = {
     "thefranceway":         "https://thefranceway.pages.dev",
     "thefranceway-agency":  "https://thefranceway-agency.pages.dev",
     "francesca-resume":     "https://francesca-ranieri-resume.pages.dev",
-    "aurasci-desci-series": "https://aurasci-desci-series.netlify.app",
     "mabp":                 "https://mabp.pages.dev",
     "agent-platform-mcp":   "https://agent-dispatcher.thefranceway.workers.dev",
 }

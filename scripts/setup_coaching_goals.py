@@ -9,7 +9,7 @@ Usage:
     python scripts/setup_coaching_goals.py              # interactive
     python scripts/setup_coaching_goals.py --list       # show current goals
     python scripts/setup_coaching_goals.py --clear      # archive all goals
-    python scripts/setup_coaching_goals.py --add-goal "Build AuraSci to 500 members" --area life
+    python scripts/setup_coaching_goals.py --add-goal "Reach peak physical and mental performance" --area health
     python scripts/setup_coaching_goals.py --add-okr "Launch FRANC token gate" --kr "1000 FRANC holders"
 """
 
@@ -150,7 +150,6 @@ def interactive_setup():
     print("  Enter goals one at a time. Press Enter on blank line when done.\n")
 
     life_goal_examples = [
-        "Build AuraSci into the leading DeSci longevity community in LATAM",
         "Reach peak physical and mental performance — consistent energy 8+/10",
         "Deepen 3 high-quality relationships in longevity / DeSci space",
         "Create financial runway of 12 months through token + partnerships",
@@ -180,7 +179,6 @@ def interactive_setup():
     okr_examples = [
         "O: Launch FRANC token ecosystem and reach 500 active holders",
         "O: Establish thefranceway as the go-to DeSci partnerships voice in LATAM",
-        "O: Ship AuraSci v2 with 3 research partners onboarded",
     ]
     print("  Examples:")
     for ex in okr_examples:

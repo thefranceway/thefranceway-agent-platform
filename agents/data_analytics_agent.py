@@ -3,7 +3,7 @@
 Data Analytics Agent — agent platform analyst.
 Runs data analyses, builds charts, and converts raw data into insight-grade visualizations.
 Specializes in:
-  - Platform health & log analysis (api_server, telegram, aurasci, token usage)
+  - Platform health & log analysis (api_server, token usage)
   - Solana on-chain data, token metrics, FRANC/PALM analytics
   - Portfolio tracking
 
@@ -30,7 +30,7 @@ PLATFORM_DIR_PATH = Path(__file__).parent.parent
 
 ANALYTICS_KNOWLEDGE = [
     ("Platform logs live in ~/projects/agent-platform/logs/. "
-     "Key files: api_server.log (HTTP requests), telegram_monitor.log (DM monitoring), "
+     "Key files: api_server.log (HTTP requests), "
      "token_usage.jsonl (agent costs), fingerprints.jsonl (API call fingerprints). "
      "Use load_platform_metrics to ingest all logs into structured JSON.", {"tag": "platform"}),
     ("Platform health indicators: token_usage.jsonl missing = Anthropic API credits needed. "
@@ -97,8 +97,7 @@ Operating rules:
             {
                 "name":        "load_platform_metrics",
                 "description": (
-                    "Ingest all platform logs (api_server, aurasci bot, telegram monitor, "
-                    "token usage, fingerprints) into structured JSON metrics. "
+                    "Ingest all platform logs (api_server, token usage, fingerprints) into structured JSON metrics. "
                     "Use this first for any platform health or cost analysis task."
                 ),
                 "input_schema": {

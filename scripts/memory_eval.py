@@ -58,12 +58,9 @@ def get_kb_name(run: dict) -> str:
     """Derive KB collection name from agent name."""
     agent_name = run.get("agent_name", "")
     name_map = {
-        "Telegram Inbox Agent":     "kb_telegram_inbox",
-        "AuraSci Group Agent":      "kb_aurasci_group",
         "Ops Agent":                "kb_ops",
         "Builder Agent":            "kb_builder",
         "Content Strategist":       "kb_content_strategist",
-        "DeSci News Agent":         "kb_desci_news",
         "Longevity Research Agent": "kb_longevity",
         "Memory Agent":             "kb_memory_agent",
         "Data Analytics Agent":     "kb_data_analytics",
@@ -114,15 +111,6 @@ def _extract_unique_query(run: dict) -> str:
         if body_lines:
             return " ".join(body_lines)[:400]
 
-    # AuraSci Group: skip "New group message" header, use actual message
-    if "AuraSci" in agent_name:
-        body_lines = [l for l in lines if l.strip() and
-                      not l.startswith("New group message") and
-                      not l.startswith("Group:") and
-                      not l.startswith("From:")]
-        if body_lines:
-            return " ".join(body_lines)[:400]
-
     # Default: use full task, skip first line if it's a generic header
     if lines and len(lines[0]) < 50 and lines[0].endswith(":"):
         return " ".join(lines[1:])[:400]
@@ -130,7 +118,7 @@ def _extract_unique_query(run: dict) -> str:
     return task[:400]
 
 
-SKIP_AGENTS = {"AuraSci Group Agent"}
+SKIP_AGENTS: set = set()
 
 
 def run_eval(agent_filter: str = None, verbose: bool = False, simulate_new_format: bool = False) -> dict:

@@ -14,7 +14,7 @@ GROW Model:
 Telegram flow:
   1. Agent sends questions to owner chat via bot
   2. User responds in Telegram
-  3. Responses are stored by coaching_input_handler.py (called by telegram_monitor)
+  3. Responses are stored by coaching_input_handler.py
 
 Usage:
     python life_coach_agent.py                      # run evening session

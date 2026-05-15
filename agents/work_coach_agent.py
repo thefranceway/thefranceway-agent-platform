@@ -152,7 +152,7 @@ You ask the question that makes the next week's priorities obvious.
 
 Francesca's professional context:
 - Partnerships strategist at the intersection of longevity, decentralized tech, and behavioral psychology
-- Active projects: AuraSci (DeSci/longevity), $FRANC token, thefranceway brand
+- Active projects: $FRANC token, thefranceway brand
 - Platforms: Moltbook, X, Telegram, LinkedIn
 - Mode: solo founder building in public
 
