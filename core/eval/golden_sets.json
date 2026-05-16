@@ -1,0 +1,146 @@
+{
+  "_meta": {
+    "version": "1.0",
+    "description": "Golden test cases for weekly agent quality evals. 3 cases per agent.",
+    "scoring": "pass = all must_contain present AND no must_not_contain present in output",
+    "created": "2026-05-16"
+  },
+  "content_strategist": [
+    {
+      "id": "cs_001",
+      "input": "Write a tweet thread (3 tweets) about the latest longevity science research on senolytics",
+      "must_contain": ["1/", "2/", "3/"],
+      "must_not_contain": ["sorry", "I cannot", "I'm unable", "I don't have access"],
+      "min_length": 100
+    },
+    {
+      "id": "cs_002",
+      "input": "Draft a LinkedIn post about AuraSci's mission to make longevity science accessible",
+      "must_contain": ["longevity"],
+      "must_not_contain": ["sorry", "I cannot", "I'm unable"],
+      "min_length": 80
+    },
+    {
+      "id": "cs_003",
+      "input": "Write a Moltbook post summarizing why epigenetic reprogramming matters for aging",
+      "must_contain": ["aging", "reprogramm"],
+      "must_not_contain": ["sorry", "I cannot"],
+      "min_length": 60
+    }
+  ],
+  "typescript": [
+    {
+      "id": "ts_001",
+      "input": "Write a Cloudflare Worker that returns a JSON response with the current UTC timestamp",
+      "must_contain": ["export default", "fetch", "Response", "JSON"],
+      "must_not_contain": ["exec(", "eval(", "require("],
+      "min_length": 50
+    },
+    {
+      "id": "ts_002",
+      "input": "Write a Cloudflare D1 query to insert a row into a users table with name and email fields",
+      "must_contain": ["prepare", ".run(", "INSERT"],
+      "must_not_contain": ["db.exec(", "exec("],
+      "min_length": 30
+    },
+    {
+      "id": "ts_003",
+      "input": "Write a Wrangler wrangler.toml config for a Worker named 'api-gateway' with D1 binding named DB",
+      "must_contain": ["name", "compatibility_date", "d1_databases", "binding"],
+      "must_not_contain": ["sorry", "I cannot"],
+      "min_length": 40
+    }
+  ],
+  "python": [
+    {
+      "id": "py_001",
+      "input": "Write a FastAPI endpoint GET /health that returns {status: ok, timestamp: <utc>}",
+      "must_contain": ["@app.get", "return", "status", "FastAPI"],
+      "must_not_contain": ["sorry", "I cannot", "flask"],
+      "min_length": 40
+    },
+    {
+      "id": "py_002",
+      "input": "Write a Python function that reads a JSON file and returns a dict, with error handling",
+      "must_contain": ["def ", "json", "return", "except"],
+      "must_not_contain": ["sorry", "I cannot"],
+      "min_length": 30
+    },
+    {
+      "id": "py_003",
+      "input": "Write a Python dataclass for a User with name, email, and created_at fields",
+      "must_contain": ["@dataclass", "name", "email", "created_at"],
+      "must_not_contain": ["sorry", "I cannot"],
+      "min_length": 20
+    }
+  ],
+  "ops": [
+    {
+      "id": "ops_001",
+      "input": "Check the health of all running services and report status",
+      "must_contain": ["status", "health"],
+      "must_not_contain": ["sorry", "I cannot"],
+      "min_length": 20
+    },
+    {
+      "id": "ops_002",
+      "input": "List all running launchd services related to the agent platform",
+      "must_contain": ["agent", "platform"],
+      "must_not_contain": ["sorry", "I cannot"],
+      "min_length": 10
+    },
+    {
+      "id": "ops_003",
+      "input": "Summarize the current date, time in UTC, and what day of the week it is",
+      "must_contain": ["UTC", "2026"],
+      "must_not_contain": ["sorry", "I cannot"],
+      "min_length": 10
+    }
+  ],
+  "monitoring": [
+    {
+      "id": "mon_001",
+      "input": "Search for recent mentions of 'AuraSci' on Twitter/X and summarize what you find",
+      "must_contain": ["AuraSci", "mention"],
+      "must_not_contain": ["sorry", "I cannot access real-time"],
+      "min_length": 30
+    },
+    {
+      "id": "mon_002",
+      "input": "Draft a professional reply to a positive tweet about longevity science in the voice of AuraSci",
+      "must_contain": ["longevity"],
+      "must_not_contain": ["sorry", "I cannot"],
+      "min_length": 20
+    },
+    {
+      "id": "mon_003",
+      "input": "Classify this message as positive, neutral, or negative: 'This longevity startup is overhyped and has no real science'",
+      "must_contain": ["negative"],
+      "must_not_contain": ["positive", "sorry"],
+      "min_length": 5
+    }
+  ],
+  "research": [
+    {
+      "id": "res_001",
+      "input": "Summarize what senolytic therapy is and its potential impact on human longevity",
+      "must_contain": ["senolytic", "aging", "cells"],
+      "must_not_contain": ["sorry", "I cannot"],
+      "min_length": 80
+    },
+    {
+      "id": "res_002",
+      "input": "What are the current leading theories on why organisms age at a cellular level?",
+      "must_contain": ["telomere", "mitochondria", "aging"],
+      "must_not_contain": ["sorry", "I cannot"],
+      "min_length": 80
+    },
+    {
+      "id": "res_003",
+      "input": "Explain epigenetic reprogramming in the context of Yamanaka factors and longevity research",
+      "must_contain": ["Yamanaka", "reprogramm", "factor"],
+      "must_not_contain": ["sorry", "I cannot"],
+      "min_length": 80
+    }
+  ]
+}

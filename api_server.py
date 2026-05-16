@@ -432,6 +432,13 @@ async def submit_task(
     return result
 
 
+@app.delete("/tasks/failed")
+async def clear_failed_tasks():
+    from core.task_queue import get_queue
+    count = get_queue().clear_failed_tasks()
+    return {"cleared": count, "status": "ok"}
+
+
 @app.get("/task/{task_id}")
 async def get_task(task_id: str):
     from core.task_queue import get_queue
