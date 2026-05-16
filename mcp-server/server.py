@@ -52,8 +52,9 @@ TOOLS = [
         "name":        "dispatch_task",
         "description": (
             "Queue and execute a task on the agent platform. "
-            "The platform routes the task to the best agent automatically, "
-            "or you can specify an agent_type. "
+            "Omit agent_type to let the orchestrator auto-route (recommended — 3-layer routing: "
+            "keyword → MABP behavioral profile → LLM fallback). "
+            "Specify agent_type only to force a specific agent. "
             "Returns a task_id and the agent's output."
         ),
         "inputSchema": {
@@ -65,7 +66,7 @@ TOOLS = [
                 },
                 "agent_type": {
                     "type":        "string",
-                    "description": "Optional: builder | ops | meta | python | typescript | solana",
+                    "description": "Optional — omit for auto-routing. Force a specific agent: builder | ops | meta | python | typescript | solana",
                     "enum":        ["builder", "ops", "meta", "python", "typescript", "solana"]
                 },
                 "async_mode": {
@@ -133,6 +134,14 @@ TOOLS = [
     {
         "name":        "platform_status",
         "description": "Get an overview of the agent platform: registered agents, task queue stats, and recent runs.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name":        "clear_failed_tasks",
+        "description": "Delete all failed tasks from the platform queue. Returns the count of tasks removed.",
         "inputSchema": {
             "type": "object",
             "properties": {},
@@ -234,6 +243,39 @@ TOOLS = [
                 },
             },
             "required": ["question"],
+        },
+    },
+    {
+        "name":        "run_pipeline",
+        "description": (
+            "Run a sequential chain of agents where each step's output feeds the next. "
+            "Example: ['research', 'content_strategist'] → research synthesizes sources, "
+            "content_strategist turns the synthesis into a tweet thread. "
+            "Returns final output plus per-step intermediates."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task": {
+                    "type":        "string",
+                    "description": "The initial task description passed to the first agent",
+                },
+                "steps": {
+                    "type":        "array",
+                    "items":       {"type": "string"},
+                    "description": (
+                        "Ordered list of agent types. Each type is routed to the matching agent. "
+                        "Supported: research, builder, ops, meta, python, typescript, content_strategist, "
+                        "monitoring, longevity, coasys_watcher"
+                    ),
+                    "minItems": 2,
+                },
+                "context": {
+                    "type":        "string",
+                    "description": "Optional shared context prepended to the initial task",
+                },
+            },
+            "required": ["task", "steps"],
         },
     },
 ]
@@ -436,6 +478,16 @@ def handle(req: dict) -> dict:
             except Exception as e:
                 return error_response(rid, -32603, str(e))
 
+        # ── clear_failed_tasks ────────────────────────────────────────────
+
+        if tool == "clear_failed_tasks":
+            try:
+                from core.task_queue import get_queue
+                count = get_queue().clear_failed_tasks()
+                return text_result(rid, json.dumps({"cleared": count, "status": "ok"}, indent=2))
+            except Exception as e:
+                return error_response(rid, -32603, str(e))
+
         # ── create_agent_from_archetype ───────────────────────────────────
 
         if tool == "create_agent_from_archetype":
@@ -500,6 +552,48 @@ def handle(req: dict) -> dict:
                     "full_report": format_council_output(result),
                 }
                 return text_result(rid, json.dumps(output, indent=2))
+            except Exception as e:
+                return error_response(rid, -32603, str(e))
+
+        # ── run_pipeline ──────────────────────────────────────────────────
+
+        if tool == "run_pipeline":
+            task  = args.get("task", "").strip()
+            steps = args.get("steps", [])
+            ctx   = args.get("context", "")
+
+            if not task:
+                return error_response(rid, -32602, "task is required")
+            if len(steps) < 2:
+                return error_response(rid, -32602, "steps must have at least 2 agent types")
+
+            if ctx:
+                task = f"{ctx}\n\n{task}"
+
+            try:
+                from core.orchestrator import Orchestrator
+                from core.swarm        import SwarmCoordinator
+
+                orch   = Orchestrator()
+                swarm  = SwarmCoordinator(orch)
+                result = swarm.pipeline(task=task, steps=steps)
+
+                output = {
+                    "swarm_id":    result["swarm_id"],
+                    "topology":    "pipeline",
+                    "steps_run":   len(result["step_results"]),
+                    "final_output": result["output"],
+                    "step_results": [
+                        {
+                            "step":       s["step"],
+                            "agent_type": s["agent_type"],
+                            "output":     s["output"][:500] + ("..." if len(s["output"]) > 500 else ""),
+                        }
+                        for s in result["step_results"]
+                    ],
+                }
+                return text_result(rid, json.dumps(output, indent=2))
+
             except Exception as e:
                 return error_response(rid, -32603, str(e))
 

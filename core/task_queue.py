@@ -183,6 +183,14 @@ class TaskQueue:
         conn.close()
         return stats
 
+    def clear_failed_tasks(self) -> int:
+        conn = get_db()
+        cur  = conn.execute("DELETE FROM tasks WHERE status = 'failed'")
+        conn.commit()
+        count = cur.rowcount
+        conn.close()
+        return count
+
     def pending_count(self, agent_type: str = None) -> int:
         conn   = get_db()
         query  = "SELECT COUNT(*) FROM tasks WHERE status = 'pending'"
