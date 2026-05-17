@@ -294,6 +294,15 @@ class Orchestrator:
                     "iterations": result["iterations"],
                 })
 
+            self.queue.log_mabp_outcome(
+                task_id            = task_id or "",
+                task_text          = task,
+                agent_type         = agent_type,
+                routing_layer      = routing_layer,
+                routing_confidence = routing_confidence,
+                shadow_summary     = result.get("shadow_monitor", {}),
+                had_error          = False,
+            )
             _run_feedback(result)
             return result
 
@@ -307,6 +316,15 @@ class Orchestrator:
                 "task":       task,
                 "agent_type": agent_type,
             }
+            self.queue.log_mabp_outcome(
+                task_id            = task_id or "",
+                task_text          = task,
+                agent_type         = agent_type,
+                routing_layer      = routing_layer or "unknown",
+                routing_confidence = routing_confidence or 0.0,
+                shadow_summary     = {},
+                had_error          = True,
+            )
             _run_feedback(result)
             return result
 

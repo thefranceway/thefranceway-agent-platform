@@ -111,6 +111,24 @@ def init_db():
             created_at  TEXT NOT NULL,
             read_at     TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS mabp_outcomes (
+            id                 TEXT PRIMARY KEY,
+            task_id            TEXT,
+            task_text          TEXT,
+            agent_type         TEXT,
+            routing_layer      TEXT,
+            routing_confidence REAL,
+            shadow_events      TEXT,    -- JSON: [{code, iteration, trigger, timestamp}]
+            shadow_count       INTEGER DEFAULT 0,
+            outcome_score      INTEGER, -- 80 success / 40 error
+            had_error          INTEGER DEFAULT 0,
+            created_at         TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_mabp_routing_layer
+            ON mabp_outcomes(routing_layer);
+        CREATE INDEX IF NOT EXISTS idx_mabp_agent_type
+            ON mabp_outcomes(agent_type);
     """)
     conn.commit()
     conn.close()
