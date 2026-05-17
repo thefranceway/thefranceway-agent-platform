@@ -15,9 +15,6 @@ Endpoints:
 
 Run: uvicorn api_server:app --port 8788 --reload
 
-FRANC token gating (Phase 7):
-  Pass X-Wallet header with Solana wallet address.
-  Requires 1000+ FRANC balance for access.
 """
 
 import asyncio
@@ -26,12 +23,11 @@ import sys
 import json
 import hashlib
 import time
-import threading
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Header, BackgroundTasks, Request
+from fastapi import Depends, FastAPI, HTTPException, Header, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -51,10 +47,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-FRANC_MINT         = "BJ8MySahjvB3XFrKWxhFR4wsnjpgqY4gGRmU9wXHLCvu"
-FRANC_MIN_BALANCE  = 1000.0
-FRANC_GATE_ENABLED = os.getenv("FRANC_GATE_ENABLED", "false").lower() == "true"
-
 PLATFORM_DIR = Path(__file__).parent
 
 # ── Rate limiter (in-memory, per API key) ─────────────────────────────────────
@@ -66,22 +58,26 @@ RATE_LIMITS = {
     "business": 500,
 }
 DEFAULT_RATE_LIMIT = 10  # free tier default
-_rate_store: dict = {}   # key → [timestamps]
-_rate_lock = threading.Lock()
 
 def _check_rate_limit(api_key: str, limit: int = DEFAULT_RATE_LIMIT) -> bool:
-    """Sliding window rate limiter. Returns True if allowed, False if exceeded."""
-    now = time.time()
-    window = 60.0
-    with _rate_lock:
-        timestamps = _rate_store.get(api_key, [])
-        timestamps = [t for t in timestamps if now - t < window]
-        if len(timestamps) >= limit:
-            _rate_store[api_key] = timestamps
+    """SQLite-backed sliding window rate limiter. Survives restarts. Returns True if allowed."""
+    from core.agent_registry import get_db
+    now    = time.time()
+    cutoff = now - 60.0
+    conn   = get_db()
+    try:
+        conn.execute("DELETE FROM rate_limits WHERE api_key = ? AND ts < ?", (api_key, cutoff))
+        count = conn.execute(
+            "SELECT COUNT(*) FROM rate_limits WHERE api_key = ?", (api_key,)
+        ).fetchone()[0]
+        if count >= limit:
+            conn.commit()
             return False
-        timestamps.append(now)
-        _rate_store[api_key] = timestamps
+        conn.execute("INSERT INTO rate_limits (api_key, ts) VALUES (?, ?)", (api_key, now))
+        conn.commit()
         return True
+    finally:
+        conn.close()
 
 # ── Request fingerprinting ────────────────────────────────────────────────────
 
@@ -109,8 +105,8 @@ def _notify_owner(api_key: str, task: str) -> None:
     try:
         import ssl, urllib.request as _req
         import certifi
-        bot_token   = os.getenv("TELEGRAM_BOT_TOKEN", "REDACTED-TELEGRAM-BOT-TOKEN")
-        chat_id     = os.getenv("TELEGRAM_OWNER_CHAT_ID", "7049234595")
+        bot_token   = os.getenv("TELEGRAM_BOT_TOKEN", "")
+        chat_id     = os.getenv("TELEGRAM_OWNER_CHAT_ID", "")
         key_preview = api_key[:8] + "..." if len(api_key) > 8 else api_key
         task_preview = task[:120] + "..." if len(task) > 120 else task
         text = (
@@ -165,28 +161,16 @@ class SchedulerWebhookPayload(BaseModel):
     agent_type:  Optional[str] = None
 
 
-# ── FRANC token gate ──────────────────────────────────────────────────────────
+# ── Bearer token auth ─────────────────────────────────────────────────────────
 
-def check_franc_access(wallet: str) -> tuple[bool, float]:
-    """Check if wallet holds enough FRANC. Returns (has_access, balance)."""
-    import urllib.request
-    SOLANA_RPC = "https://api.mainnet-beta.solana.com"
-    try:
-        data = json.dumps({
-            "jsonrpc": "2.0", "id": 1,
-            "method": "getTokenAccountsByOwner",
-            "params": [wallet, {"mint": FRANC_MINT}, {"encoding": "jsonParsed"}],
-        }).encode()
-        req = urllib.request.Request(SOLANA_RPC, data=data, headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            result = json.loads(resp.read())
-        total = 0.0
-        for acc in result.get("result", {}).get("value", []):
-            info = acc.get("account", {}).get("data", {}).get("parsed", {}).get("info", {})
-            total += float(info.get("tokenAmount", {}).get("uiAmount", 0))
-        return total >= FRANC_MIN_BALANCE, total
-    except Exception:
-        return False, 0.0
+def _require_api_key(request: Request) -> None:
+    """Protect internal endpoints with a bearer token."""
+    api_key = os.getenv("PLATFORM_API_KEY", "")
+    if not api_key:
+        return  # dev mode: no key configured → open
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer ") or auth[7:] != api_key:
+        raise HTTPException(401, "Unauthorized")
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -249,7 +233,7 @@ async def health_check():
 
 
 @app.get("/agent-cost")
-async def agent_cost():
+async def agent_cost(_auth: None = Depends(_require_api_key)):
     """Per-agent token spend derived from logs/token_usage.jsonl."""
     log_path = PLATFORM_DIR / "logs" / "token_usage.jsonl"
     PRICING = {  # (input $/1M, output $/1M)
@@ -289,7 +273,7 @@ async def agent_cost():
 
 
 @app.get("/agent-health")
-async def agent_health():
+async def agent_health(_auth: None = Depends(_require_api_key)):
     """Per-agent health status derived from runs.json."""
     runs_path = PLATFORM_DIR / "registry" / "runs.json"
     try:
@@ -388,29 +372,13 @@ async def platform_status():
 @app.post("/task")
 async def submit_task(
     body:             TaskRequest,
+    request:          Request,
     background_tasks: BackgroundTasks,
-    x_wallet:         Optional[str] = Header(None),
+    _auth:            None = Depends(_require_api_key),
 ):
-    # FRANC gate (when enabled)
-    if FRANC_GATE_ENABLED:
-        if not x_wallet:
-            raise HTTPException(403, detail={
-                "error": "wallet_required",
-                "message": "This API requires $FRANC token access. Add your Solana wallet address as the X-Wallet header.",
-                "how_to_get_access": "Buy 1,000 $FRANC on pump.fun to unlock API access.",
-                "buy_franc": "https://pump.fun/coin/BJ8MySahjvB3XFrKWxhFR4wsnjpgqY4gGRmU9wXHLCvu",
-                "required": 1000,
-                "held": 0,
-            })
-        has_access, balance = check_franc_access(x_wallet)
-        if not has_access:
-            raise HTTPException(403, detail={
-                "error": "insufficient_franc",
-                "message": f"Access denied. You need 1,000 $FRANC, your wallet holds {balance:.0f}.",
-                "buy_franc": "https://pump.fun/coin/BJ8MySahjvB3XFrKWxhFR4wsnjpgqY4gGRmU9wXHLCvu",
-                "required": 1000,
-                "held": int(balance),
-            })
+    api_key = request.headers.get("Authorization", request.client.host if request.client else "anon")
+    if not _check_rate_limit(api_key):
+        raise HTTPException(429, "Rate limit exceeded.")
 
     from core.task_queue  import get_queue
     queue   = get_queue()
@@ -433,7 +401,7 @@ async def submit_task(
 
 
 @app.delete("/tasks/failed")
-async def clear_failed_tasks():
+async def clear_failed_tasks(_auth: None = Depends(_require_api_key)):
     from core.task_queue import get_queue
     count = get_queue().clear_failed_tasks()
     return {"cleared": count, "status": "ok"}
@@ -449,7 +417,7 @@ async def get_task(task_id: str):
 
 
 @app.post("/run-queue")
-async def scheduler_webhook(payload: SchedulerWebhookPayload):
+async def scheduler_webhook(payload: SchedulerWebhookPayload, _auth: None = Depends(_require_api_key)):
     """CF scheduler calls this endpoint to execute a claimed task."""
     result = await asyncio.to_thread(_run_task, payload.task_id, payload.description, payload.agent_type)
     return result
@@ -467,7 +435,7 @@ class QualityCheckRequest(BaseModel):
 
 
 @app.post("/quality-check")
-async def quality_check(body: QualityCheckRequest):
+async def quality_check(body: QualityCheckRequest, _auth: None = Depends(_require_api_key)):
     """
     Run a product through the 3-gate quality pipeline.
 
@@ -529,7 +497,7 @@ class SwarmRequest(BaseModel):
 
 
 @app.post("/swarm")
-async def run_swarm(body: SwarmRequest):
+async def run_swarm(body: SwarmRequest, request: Request, _auth: None = Depends(_require_api_key)):
     """
     Run a multi-agent swarm task.
 
@@ -537,6 +505,10 @@ async def run_swarm(body: SwarmRequest):
       hierarchical — agents[0] is lead (decomposes + synthesizes), agents[1:] are workers
       pipeline     — agents are executed in order, each output feeds the next
     """
+    api_key = request.headers.get("Authorization", request.client.host if request.client else "anon")
+    if not _check_rate_limit(api_key, limit=RATE_LIMITS["pro"]):
+        raise HTTPException(429, "Rate limit exceeded.")
+
     from core.swarm import get_swarm
     coordinator = get_swarm()
 
@@ -560,7 +532,7 @@ async def run_swarm(body: SwarmRequest):
 
 
 @app.post("/skills/load")
-async def load_skill_preview(body: SkillLoadRequest):
+async def load_skill_preview(body: SkillLoadRequest, _auth: None = Depends(_require_api_key)):
     """
     Preview the skill content that would be injected into an agent's system prompt.
     Useful for validating skill content before running a task.

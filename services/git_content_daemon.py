@@ -59,15 +59,15 @@ log = logging.getLogger("git_content")
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-GITHUB_TOKEN      = os.getenv("GITHUB_TOKEN", "REDACTED-GITHUB-TOKEN")
-BOT_TOKEN         = os.getenv("TELEGRAM_BOT_TOKEN", "REDACTED-TELEGRAM-BOT-TOKEN")
-OWNER_CHAT_ID     = os.getenv("TELEGRAM_OWNER_CHAT_ID", "7049234595")
+GITHUB_TOKEN      = os.getenv("GITHUB_TOKEN", "")
+BOT_TOKEN         = os.getenv("TELEGRAM_BOT_TOKEN", "")
+OWNER_CHAT_ID     = os.getenv("TELEGRAM_OWNER_CHAT_ID", "")
 BOT_API           = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-TW_API_KEY        = os.getenv("TWITTER_API_KEY",              "REDACTED-TWITTER-API-KEY")
-TW_API_SECRET     = os.getenv("TWITTER_API_SECRET",           "REDACTED-TWITTER-API-SECRET")
-TW_ACCESS_TOKEN   = os.getenv("TWITTER_ACCESS_TOKEN",         "REDACTED-TWITTER-ACCESS-TOKEN")
-TW_ACCESS_SECRET  = os.getenv("TWITTER_ACCESS_TOKEN_SECRET",  "REDACTED-TWITTER-ACCESS-SECRET")
+TW_API_KEY        = os.getenv("TWITTER_API_KEY",             "")
+TW_API_SECRET     = os.getenv("TWITTER_API_SECRET",          "")
+TW_ACCESS_TOKEN   = os.getenv("TWITTER_ACCESS_TOKEN",        "")
+TW_ACCESS_SECRET  = os.getenv("TWITTER_ACCESS_TOKEN_SECRET", "")
 
 WATCHED_REPOS     = [
     "thefranceway/franc-token",
