@@ -441,6 +441,7 @@ class EmbeddingStore:
 
     def _conn(self):
         conn = _sqlite3.connect(str(self.db_path))
+        conn.execute("PRAGMA journal_mode=WAL;")
         conn.row_factory = _sqlite3.Row
         return conn
 
