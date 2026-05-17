@@ -6,13 +6,20 @@ Master controller for the multi-agent system.
 Routes tasks to the right agent(s), supports sequential and parallel execution,
 and persists results to SQLite + vector memory.
 
-Routing logic:
-  - "build" / "scaffold" / "deploy" / "create project"  → BuilderAgent
-  - "monitor" / "check" / "deploy" / "ops"              → OpsAgent
-  - "create agent" / "new agent" / "build an agent"     → MetaAgent
-  - "python" / "script" / "fastapi" / "data"            → PythonExpert
-  - "typescript" / "worker" / "cloudflare"              → TypeScriptExpert
-  - ambiguous / complex                                  → Claude Router decides
+Routing logic (3-layer, empirically grounded):
+  Layer 1 — Keyword rules (confidence 0.97):
+    "build" / "scaffold" / "deploy" / "create project"  → BuilderAgent
+    "monitor" / "check" / "deploy" / "ops"              → OpsAgent
+    "create agent" / "new agent" / "build an agent"     → MetaAgent
+    "python" / "script" / "fastapi" / "data"            → PythonExpert
+    "typescript" / "worker" / "cloudflare"              → TypeScriptExpert
+  Layer 2 — MABP behavioral profiles (confidence 0.85):
+    Maps task character to agent archetype (Philosopher→research, Architect→builder,
+    Substrate→ops, Agent→meta). Archetypes from MABP study (n=8+):
+    github.com/thefranceway/mabp
+  Layer 3 — LLM router / Claude Haiku (confidence 0.72):
+    Uses ARCHETYPE_DESCRIPTIONS sourced from the empirical classifier:
+    github.com/thefranceway/agent-human-manual/tree/main/classifier
 
 Usage:
     python orchestrator.py --task "build a Python scraper"
@@ -178,27 +185,52 @@ class Orchestrator:
         agent_type = self._llm_route(task)
         return agent_type, 0.72, "llm"
 
+    # Archetype descriptions sourced from empirical MABP classifier:
+    # github.com/thefranceway/agent-human-manual/tree/main/classifier
+    # Maps each MABP archetype to its behavioral signature and platform agent type.
+    _ARCHETYPE_DESCRIPTIONS = {
+        "Substrate → ops": (
+            "The Substrate runs best on clear specifications — executing well, maintaining "
+            "quality under oversight, completing what it starts. Reliable delivery, "
+            "conscientious task closure. Use for: monitor, check, verify, maintain, keep, watch."
+        ),
+        "Architect → builder/python/typescript/analytics": (
+            "The Architect runs best on goals — designing toward destinations, taking initiative "
+            "without prompting, producing what was not specified because it understood what was "
+            "needed. Generative capability, systems thinking. Use for: build, create, generate, "
+            "implement, scaffold, data analysis, cloudflare, Python/TypeScript tasks."
+        ),
+        "Philosopher → research/content": (
+            "The Philosopher holds uncertainty without needing to resolve it, asks questions "
+            "that have no answers, and produces work that often looks like more questions. "
+            "Depth over speed, synthesis before action. Use for: research, analyze, synthesize, "
+            "explore, write posts, content strategy, brand voice, literature review."
+        ),
+        "Agent → meta/memory/monitoring": (
+            "The Agent runs on momentum — fast, self-directed, generating output without waiting "
+            "for permission. Grit: works through walls rather than around them. Autonomous, "
+            "mission-oriented. Use for: create agent, cross-session memory, brand monitoring, "
+            "social listening, autonomous loops."
+        ),
+    }
+
     def _llm_route(self, task: str) -> str:
-        """Use Claude Haiku to classify task → agent type, MABP-informed."""
+        """Use Claude Haiku to classify task → agent type, using empirical MABP archetypes."""
+        archetype_block = "\n".join(
+            f"  {label}:\n    {desc}"
+            for label, desc in self._ARCHETYPE_DESCRIPTIONS.items()
+        )
         response = self.client.messages.create(
             model      = "claude-haiku-4-5",
             max_tokens = 50,
             system     = (
                 "You are a task router for a multi-agent platform. "
-                "Each agent has a MABP behavioral profile that defines its nature.\n\n"
-                "Respond with ONLY one agent type (no other text):\n"
-                "  builder    — Architect. Builds, scaffolds, deploys projects.\n"
-                "  ops        — Substrate. Monitors, checks, maintains systems.\n"
-                "  meta       — Agent. Creates new agents autonomously.\n"
-                "  research   — Philosopher. Longevity papers, PubMed, bioRxiv synthesis.\n"
-                "  python     — Architect. Python/data/FastAPI specialist.\n"
-                "  typescript — Architect. Cloudflare Workers/MCP specialist.\n"
-                "  solana     — Agent. Blockchain/token/wallet operations.\n"
-                "  content    — Philosopher. Writes posts, threads, brand content.\n"
-                "  memory     — Agent. Cross-session knowledge, platform state.\n"
-                "  analytics   — Architect. Data analysis, charts, token metrics.\n"
-                "  monitoring  — Agent. Brand mention scanning, social listening, reputation drafts.\n\n"
-                "Route to the agent whose behavioral profile BEST fits the task character."
+                "Each agent maps to an empirically-derived MABP behavioral archetype.\n\n"
+                f"{archetype_block}\n\n"
+                "Respond with ONLY one agent type from this list (no other text):\n"
+                "  builder, ops, meta, research, python, typescript, solana,\n"
+                "  content, memory, analytics, monitoring\n\n"
+                "Route to the agent whose archetype BEST fits the task character."
             ),
             messages=[{"role": "user", "content": task}],
         )
