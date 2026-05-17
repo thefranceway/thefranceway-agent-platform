@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  security-check:
+    name: Security & Stack Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Import check — core modules
+        run: |
+          python -c "from core.orchestrator import Orchestrator; print('orchestrator OK')"
+          python -c "from core.task_queue import get_queue; print('task_queue OK')"
+          python -c "from core.agent_registry import get_registry; print('agent_registry OK')"
+          python -c "from core.swarm import get_swarm; print('swarm OK')"
+          python -c "from core.spar import SparKit; print('spar OK')"
+          python -c "from core.skill_loader import get_skill_loader; print('skill_loader OK')"
+
+      - name: Stack eval — deterministic checks
+        run: python core/eval/stack_eval.py
+
+  lint-secrets:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for hardcoded credential fallbacks
+        run: |
+          if grep -rn 'os\.getenv.*"[A-Za-z0-9_\-]\{20,\}"' --include="*.py" .; then
+            echo "FAIL: hardcoded credential fallback detected"
+            exit 1
+          fi
+          echo "PASS: no hardcoded credential fallbacks found"
