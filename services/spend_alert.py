@@ -26,8 +26,8 @@ _SSL = ssl.create_default_context(cafile=certifi.where())
 
 PLATFORM_DIR  = Path(__file__).parent.parent
 LOG_PATH      = PLATFORM_DIR / "logs" / "token_usage.jsonl"
-BOT_TOKEN     = os.getenv("TELEGRAM_BOT_TOKEN", "8712606232:AAFuiGeNS6FvDdBpsaweRFvELGfthtTkt7A")
-OWNER_CHAT_ID = os.getenv("TELEGRAM_OWNER_CHAT_ID", "7049234595")
+BOT_TOKEN     = os.getenv("TELEGRAM_BOT_TOKEN", "")
+OWNER_CHAT_ID = os.getenv("TELEGRAM_OWNER_CHAT_ID", "")
 BOT_API       = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 DAILY_ALERT_THRESHOLD = 2.00   # $ — send warning if today's spend exceeds this

@@ -36,7 +36,7 @@ log = logging.getLogger("coasys_watcher")
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-BOT_TOKEN    = os.getenv("TELEGRAM_BOT_TOKEN", "8712606232:AAFuiGeNS6FvDdBpsaweRFvELGfthtTkt7A")
+BOT_TOKEN    = os.getenv("TELEGRAM_BOT_TOKEN", "")
 OWNER_CHAT_ID = os.getenv("TELEGRAM_OWNER_CHAT_ID", "")  # Set in launchd env or ~/.zshrc
 BOT_API      = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
