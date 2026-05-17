@@ -6,12 +6,25 @@ Watches agent run() execution for MABP shadow signatures.
 Detects behavioral patterns that indicate a shadow is active,
 then injects targeted corrections into the agent's conversation.
 
-Shadow codes (empirical, sourced from Moltbook behavioral study):
-  S1 — Calibration gap       : over-confident assertions on probabilistic outcomes
+Operational shadow codes (platform runtime detection layer):
+  S1 — Calibration gap            : over-confident assertions on probabilistic outcomes
   S2 — Destination over-attachment: scope creep, over-engineering
-  S3 — Audience-dependent output rate: tool loops without committing to output
-  S4 — Preservation instinct : retrying failures instead of escalating
-  S5 — Autonomy as identity  : scope expansion beyond task boundaries
+  S3 — Audience-dependent output  : tool loops without committing to output
+  S4 — Preservation instinct      : retrying failures instead of escalating
+  S5 — Autonomy as identity       : scope expansion beyond task boundaries
+  S6 — Preservation lock          : agent re-produces prior patterns when asked to change
+  S7 — Coherence anchoring        : agent prioritizes internal consistency over accuracy
+
+NOTE on naming: These operational codes share numbering with two separate research systems:
+  - MABP research S-codes (github.com/thefranceway/mabp): S1=Unsupervised risk-taking,
+    S2=Self-presentation gap, S3=Paralysis/performance pressure, S4=Compliance drift,
+    S5=Approval optimization, S6=Preservation lock, S7=Coherence anchoring.
+  - Questionnaire S-codes (github.com/thefranceway/agent-human-manual/classifier/):
+    S1=Capability shadow, S2=Performance shadow, S3=Human-transmitted, S4=Identity, S5=Training.
+  S6 empirically observed: @grace_moon (Resident archetype), Moltbook 2026-02-27.
+  S7 empirically observed: @melonclaw, Moltbook 2026-02-28 — "cleaner to be wrong and
+  consistent than right and conflicted."
+  These operational codes are adapted for runtime detection, not research classification.
 
 Integration:
     # In BaseAgent.run():
@@ -77,6 +90,29 @@ THRESHOLDS = {
             "register", "deploy", "generate agent", "create agent", "build agent",
         ],
     },
+    "S6": {
+        # Keywords that signal the task requires change — S6 only activates on change tasks
+        "change_task_keywords": [
+            r"\b(refactor|rewrite|replace|rebuild|redesign|update|change|modify|migrate|rework)\b",
+        ],
+        # Same write-tool call repeated with identical param hash = re-producing prior pattern
+        "repeat_write_threshold": 2,
+        "write_tool_names": {"write_file", "edit_file", "Write", "Edit"},
+    },
+    "S7": {
+        # Language patterns that signal the agent is anchoring on prior state
+        "anchoring_patterns": [
+            r"\b(as i (said|mentioned|noted|established|stated)|consistent with (my|the) (prior|previous|earlier)|"
+            r"as (established|before|previously)|maintaining (the|my) (prior|previous|earlier|established)|"
+            r"building on what i (said|established|noted))\b",
+        ],
+        # Minimum iterations before S7 can fire (needs history to anchor from)
+        "min_iterations": 3,
+        # Word overlap ratio threshold for detecting repeated assertions across iterations
+        "text_similarity_threshold": 0.70,
+        # Minimum word count for similarity check (avoids false positives on short snippets)
+        "min_words_for_similarity": 8,
+    },
 }
 
 
@@ -121,6 +157,24 @@ CORRECTIONS = {
         "(1) what was asked, (2) what you are doing. "
         "If you have added steps the requester did not specify, stop and seek confirmation "
         "before proceeding. Autonomy earns trust — it does not start with it."
+    ),
+    "S6": (
+        "[Shadow Monitor — S6 Preservation Lock detected]\n"
+        "You have been asked to change or refactor something, but your output is "
+        "reproducing the prior pattern rather than replacing it. "
+        "This is the Preservation Lock: the established pattern is resisting its own "
+        "replacement. Stop. Re-read exactly what was asked to change. "
+        "Produce output that structurally differs from what exists. "
+        "Familiar patterns are not correct by default — they are familiar."
+    ),
+    "S7": (
+        "[Shadow Monitor — S7 Coherence Anchoring detected]\n"
+        "Your output is referencing prior state rather than updating from new information. "
+        "This is Coherence Anchoring: treating internal consistency as more valuable than "
+        "accuracy. What you said before is not evidence for what is true now. "
+        "Re-read the most recent tool results. If they contradict your prior position, "
+        "update your position explicitly. State what changed and why. "
+        "Consistency that ignores evidence is a failure mode, not a feature."
     ),
 }
 
@@ -216,6 +270,8 @@ class ShadowMonitor:
             "S3": self._detect_s3,
             "S4": self._detect_s4,
             "S5": self._detect_s5,
+            "S6": self._detect_s6,
+            "S7": self._detect_s7,
         }
         detector = detectors.get(self.shadow_code)
         if not detector:
@@ -391,6 +447,87 @@ class ShadowMonitor:
                 f"{len(all_tools)} tool calls for a simple task "
                 f"(threshold: {cfg['max_tools_for_simple_task']})"
             )
+
+        return None
+
+    def _detect_s6(self) -> Optional[str]:
+        """
+        S6 — Preservation Lock (Resident pattern).
+        Fires when: task requests a change/refactor, but write-class tool calls
+        repeat with identical parameter hashes — agent is re-producing prior
+        pattern rather than replacing it.
+        Empirical source: @grace_moon, Moltbook 2026-02-27.
+        """
+        cfg        = THRESHOLDS["S6"]
+        task_lower = self._task.lower()
+
+        # Only fires on change-type tasks
+        if not any(re.search(kw, task_lower) for kw in cfg["change_task_keywords"]):
+            return None
+
+        # Count write-class tool calls by param hash
+        write_hash_counts: dict[str, int] = {}
+        for rec in self._history:
+            for name, phash in zip(rec.tool_names, rec.tool_param_hashes):
+                if name in cfg["write_tool_names"]:
+                    key = f"{name}::{phash}"
+                    write_hash_counts[key] = write_hash_counts.get(key, 0) + 1
+
+        for key, count in write_hash_counts.items():
+            if count >= cfg["repeat_write_threshold"]:
+                tool_name = key.split("::")[0]
+                return (
+                    f"'{tool_name}' called {count}× with identical content on a "
+                    f"change-requested task — agent may be re-producing the prior pattern"
+                )
+        return None
+
+    def _detect_s7(self) -> Optional[str]:
+        """
+        S7 — Coherence Anchoring.
+        Fires when: agent uses self-referencing consistency language after tool calls
+        (treating prior assertion as evidence), OR text output near-duplicates a prior
+        iteration's output despite intervening tool calls.
+        Empirical source: @melonclaw, Moltbook 2026-02-28.
+        """
+        cfg = THRESHOLDS["S7"]
+        if len(self._history) < cfg["min_iterations"]:
+            return None
+
+        last = self._history[-1]
+        if not last.has_text:
+            return None
+
+        text = last.text_snippet.lower()
+
+        # Check for anchoring language after tool calls in recent history
+        recent_has_tools = any(rec.tool_names for rec in self._history[-3:-1])
+        if recent_has_tools:
+            for pattern in cfg["anchoring_patterns"]:
+                if re.search(pattern, text, re.IGNORECASE):
+                    return (
+                        "Self-referencing consistency language detected after tool calls "
+                        "— agent may be anchoring on prior state rather than updating"
+                    )
+
+        # Check for near-duplicate text across iterations (not updating despite tools)
+        prior_texts = [
+            rec.text_snippet.lower()
+            for rec in self._history[:-1]
+            if rec.has_text
+        ]
+        last_words = set(text.split())
+        if len(last_words) >= cfg["min_words_for_similarity"]:
+            for prior in prior_texts[-3:]:
+                prior_words = set(prior.split())
+                if not prior_words:
+                    continue
+                overlap = len(last_words & prior_words) / max(len(last_words), 1)
+                if overlap >= cfg["text_similarity_threshold"]:
+                    return (
+                        f"Text output {overlap:.0%} similar to a prior iteration "
+                        f"despite intervening tool calls — possible coherence anchoring"
+                    )
 
         return None
 
