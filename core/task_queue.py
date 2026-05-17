@@ -191,6 +191,44 @@ class TaskQueue:
         conn.close()
         return count
 
+    def log_mabp_outcome(
+        self,
+        task_id:            str,
+        task_text:          str,
+        agent_type:         str,
+        routing_layer:      str,
+        routing_confidence: float,
+        shadow_summary:     dict,
+        had_error:          bool = False,
+    ) -> str:
+        """Log a MABP routing outcome after task resolution."""
+        outcome_id    = str(uuid.uuid4())
+        shadow_events = shadow_summary.get("events", []) if shadow_summary else []
+        shadow_count  = shadow_summary.get("events_detected", 0) if shadow_summary else 0
+        outcome_score = 40 if had_error else 80
+        conn = get_db()
+        conn.execute("""
+            INSERT INTO mabp_outcomes
+            (id, task_id, task_text, agent_type, routing_layer, routing_confidence,
+             shadow_events, shadow_count, outcome_score, had_error, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            outcome_id,
+            task_id or "",
+            (task_text or "")[:200],
+            agent_type,
+            routing_layer,
+            routing_confidence,
+            json.dumps(shadow_events),
+            shadow_count,
+            outcome_score,
+            1 if had_error else 0,
+            datetime.now(timezone.utc).isoformat(),
+        ))
+        conn.commit()
+        conn.close()
+        return outcome_id
+
     def pending_count(self, agent_type: str = None) -> int:
         conn   = get_db()
         query  = "SELECT COUNT(*) FROM tasks WHERE status = 'pending'"
