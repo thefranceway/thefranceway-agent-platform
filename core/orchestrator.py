@@ -60,6 +60,7 @@ ROUTING_RULES = [
     ("analytics", r"\b(analytics|chart|graph|visuali|token metrics|portfolio|on.chain data|dataframe)\b"),
     ("content",   r"\b(write a post|moltbook post|tweet|twitter thread|content strategy|brand voice|write about|post about)\b"),
     ("monitoring",r"\b(brand mention|mention monitor|social listening|track mentions|brand alert|reputation monitor)\b"),
+    ("media",     r"\b(transcribe|analyze video|video analysis|extract audio|key frames?|\.mp4|\.mov|\.mkv|\.avi|\.webm|lecture recording|meeting recording|video clip|video file)\b"),
     ("ops",       r"\b(monitor|health check|check site|check all|redeploy|deployment|ops|cron|schedule)\b"),
     ("typescript",r"\b(typescript|cloudflare worker|wrangler|cf worker|mcp server)\b"),
     ("builder",   r"\b(scaffold|build project|create project|generate project|boilerplate|new repo)\b"),
@@ -114,6 +115,7 @@ def make_agent(agent_type: str, spec: dict = None, provider: str = None):
     from agents.memory_agent                     import MemoryAgent
     from agents.data_analytics_agent             import DataAnalyticsAgent
     from agents.brand_mention_monitor            import BrandMentionMonitorAgent
+    from agents.media_agent                      import MediaAgent
 
     kwargs = {"provider": provider} if provider else {}
 
@@ -128,6 +130,7 @@ def make_agent(agent_type: str, spec: dict = None, provider: str = None):
         "memory":     lambda: MemoryAgent(**kwargs),
         "analytics":  lambda: DataAnalyticsAgent(**kwargs),
         "monitoring": lambda: BrandMentionMonitorAgent(name="Brand Mention Monitor", **kwargs),
+        "media":      lambda: MediaAgent(**kwargs),
     }
     if agent_type not in factories:
         raise ValueError(f"Unknown agent type: {agent_type}. Valid: {list(factories)}")
@@ -212,6 +215,12 @@ class Orchestrator:
             "mission-oriented. Use for: create agent, cross-session memory, brand monitoring, "
             "social listening, autonomous loops."
         ),
+        "Architect → media": (
+            "Processes structured inputs (video, audio) into structured outputs (transcripts, "
+            "summaries, key frames). Local Whisper + ffmpeg pipeline, minimal API cost. "
+            "Use for: transcribe video, analyze video, extract audio, lecture notes, "
+            "meeting recordings, .mp4/.mov/.mkv files."
+        ),
     }
 
     def _llm_route(self, task: str) -> str:
@@ -236,7 +245,7 @@ class Orchestrator:
         )
         route = response.content[0].text.strip().lower()
         valid = {"builder", "ops", "meta", "research", "python", "typescript", "solana",
-                 "content", "memory", "analytics", "monitoring"}
+                 "content", "memory", "analytics", "monitoring", "media"}
         return route if route in valid else "python"
 
     # ── SPAR Gate ─────────────────────────────────────────────────────────
