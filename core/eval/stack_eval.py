@@ -16,12 +16,55 @@ Usage:
 import json
 import re
 import sys
+import urllib.request
+import urllib.error
 from datetime import date, datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
 RESULTS_DIR = ROOT / "registry" / "eval_results"
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
+_AD4M_GQL    = "http://localhost:4000/graphql"
+_PERSPECTIVE = "a47bf0c3-5a86-4367-a462-f88680491525"
+
+# ── AD4M score write ──────────────────────────────────────────────────────────
+
+def _ad4m_write_link(source: str, predicate: str, target: str) -> None:
+    """Write one link to AD4M. Silently no-ops if the executor is unreachable."""
+    mutation = """
+        mutation PerspectiveAddLink($uuid: String!, $link: LinkInput!) {
+          perspectiveAddLink(uuid: $uuid, link: $link) {
+            author timestamp
+            data { source predicate target }
+          }
+        }
+    """
+    payload = json.dumps({
+        "query": mutation,
+        "variables": {
+            "uuid": _PERSPECTIVE,
+            "link": {"source": source, "predicate": predicate, "target": target},
+        },
+    }).encode()
+    req = urllib.request.Request(
+        _AD4M_GQL,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            resp.read()
+    except Exception:
+        pass  # AD4M offline — JSON result file is the canonical record
+
+
+def _write_score_to_ad4m(payload: dict) -> None:
+    # origin=franc://session-note convention; provenance: added 2026-05-18 (stack eval CI)
+    run_uri = f"eval://stack-eval/{payload['date']}"
+    _ad4m_write_link(run_uri, "franc://eval-score",   f"literal://{payload['score']}")
+    _ad4m_write_link(run_uri, "franc://has-content",  f"literal://{json.dumps(payload)}")
+
 
 # ── Checks ────────────────────────────────────────────────────────────────────
 
@@ -181,6 +224,9 @@ def main() -> int:
     }
     today_file.write_text(json.dumps(payload, indent=2))
     print(f"\nResults written → {today_file.relative_to(ROOT)}")
+
+    _write_score_to_ad4m(payload)
+    print(f"AD4M score written → eval://stack-eval/{payload['date']}  [{score}%]")
 
     if (ci_mode or True) and (deltas or passed < total):
         failed_names = [n for n, r in results.items() if not r["pass"]]
