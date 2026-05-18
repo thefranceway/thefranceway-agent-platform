@@ -46,8 +46,10 @@ try:
     from core.runtime.loader import get_param
 except Exception:
     def get_param(key, default=None): return default
-from core.agent_registry import get_registry
-from core.task_queue     import get_queue
+from core.agent_registry  import get_registry
+from core.task_queue      import get_queue
+from core.contracts       import validate_input, ContractViolationError
+from core.agent_schemas   import OrchestratorInput, get_schema
 
 # ── Routing keywords ──────────────────────────────────────────────────────────
 # Primary: explicit domain keywords → deterministic route
@@ -70,6 +72,9 @@ ROUTING_RULES = [
     ("security_audit",   r"\b(security audit|rls audit|owasp check|vulnerability scan|missing auth guard)\b"),
     ("ci_cd",            r"\b(github actions|ci.cd pipeline|deploy workflow|backend workflow|\.yml workflow)\b"),
     ("observability",    r"\b(sentry setup|health endpoint|logpush|observability setup|/health route)\b"),
+    ("product_architect",r"\b(product requirements|prd|jobs.to.be.done|feature scope|moscow|user stories|product spec)\b"),
+    ("ux_architect",     r"\b(screen inventory|navigation graph|user flows|ux spec|ux architecture|wireframe spec|app screens)\b"),
+    ("design_decisions", r"\b(design system spec|component inventory|typography scale|spacing system|interaction patterns|design tokens|design spec)\b"),
     ("typescript",r"\b(typescript|cloudflare worker|wrangler|cf worker|mcp server)\b"),
     ("builder",   r"\b(scaffold|build project|create project|generate project|boilerplate|new repo)\b"),
     ("research",  r"\b(longevity|pubmed|biorxiv|literature review|synthesize papers|weekly digest)\b"),
@@ -113,7 +118,8 @@ def _run_feedback(result: dict):
 
 def make_agent(agent_type: str, spec: dict = None, provider: str = None):
     """Instantiate an agent by type. provider overrides DEFAULT_PROVIDER."""
-    from agents.builder_agent  import BuilderAgent
+    from agents.planning_agent  import PlanningAgent
+    from agents.builder_agent   import BuilderAgent
     from agents.ops_agent      import OpsAgent
     from agents.meta_agent     import MetaAgent
     from agents.longevity_research_agent         import LongevityResearchAgent
@@ -132,10 +138,14 @@ def make_agent(agent_type: str, spec: dict = None, provider: str = None):
     from agents.security_audit_agent             import SecurityAuditAgent
     from agents.ci_cd_agent                      import CICDAgent
     from agents.observability_agent              import ObservabilityAgent
+    from agents.product_architect_agent          import ProductArchitectAgent
+    from agents.ux_architecture_agent            import UXArchitectureAgent
+    from agents.design_decisions_agent           import DesignDecisionsAgent
 
     kwargs = {"provider": provider} if provider else {}
 
     factories = {
+        "planning_agent": lambda: PlanningAgent(name="Planning Agent", **kwargs),
         "builder":    lambda: BuilderAgent(name="Builder Agent", **kwargs),
         "ops":        lambda: OpsAgent(name="Ops Agent", **kwargs),
         "meta":       lambda: MetaAgent(name="Meta Agent", **kwargs),
@@ -155,6 +165,9 @@ def make_agent(agent_type: str, spec: dict = None, provider: str = None):
         "security_audit":    lambda: SecurityAuditAgent(name="Security Audit Agent", **kwargs),
         "ci_cd":             lambda: CICDAgent(name="CI/CD Agent", **kwargs),
         "observability":     lambda: ObservabilityAgent(name="Observability Agent", **kwargs),
+        "product_architect": lambda: ProductArchitectAgent(name="Product Architect Agent", **kwargs),
+        "ux_architect":      lambda: UXArchitectureAgent(name="UX Architecture Agent", **kwargs),
+        "design_decisions":  lambda: DesignDecisionsAgent(name="Design Decisions Agent", **kwargs),
     }
     if agent_type not in factories:
         raise ValueError(f"Unknown agent type: {agent_type}. Valid: {list(factories)}")
@@ -201,6 +214,11 @@ class Orchestrator:
         """
         task_lower = task.lower()
 
+        # Planning agent — highest priority, before keyword rules
+        _PLANNING_TRIGGERS = {"plan:", "design:", "build end-to-end", "full pipeline"}
+        if any(t in task_lower for t in _PLANNING_TRIGGERS):
+            return "planning_agent", 0.95, "keyword"
+
         for agent_type, pattern in ROUTING_RULES:
             if re.search(pattern, task_lower, re.IGNORECASE):
                 return agent_type, 0.97, "keyword"
@@ -245,6 +263,22 @@ class Orchestrator:
             "Use for: transcribe video, analyze video, extract audio, lecture notes, "
             "meeting recordings, .mp4/.mov/.mkv files."
         ),
+        "Philosopher → product_architect": (
+            "Translates a plain-language description into a MoSCoW-prioritized PRD with "
+            "user stories, success metrics, and explicit out-of-scope boundaries. "
+            "Use for: product requirements, prd, jobs-to-be-done, feature scope, user stories, product spec."
+        ),
+        "Architect → ux_architect": (
+            "Translates a PRD into a UX specification: screen inventory, navigation graph, "
+            "user flows, and data entities derived from user actions. "
+            "Use for: screen inventory, navigation graph, user flows, ux spec, ux architecture, wireframe spec, app screens."
+        ),
+        "Substrate → design_decisions": (
+            "Translates a PRD + UX spec into a design system specification: typography, spacing, "
+            "color tokens, components, interaction patterns, and accessibility requirements. "
+            "Use for: design system spec, component inventory, typography scale, spacing system, "
+            "interaction patterns, design tokens, design spec."
+        ),
     }
 
     def _llm_route(self, task: str) -> str:
@@ -264,7 +298,8 @@ class Orchestrator:
                 "  builder, ops, meta, research, python, typescript,\n"
                 "  content, memory, analytics, monitoring, media,\n"
                 "  backend_architect, database, api_builder, auth_backend,\n"
-                "  infra, security_audit, ci_cd, observability\n\n"
+                "  infra, security_audit, ci_cd, observability,\n"
+                "  product_architect, ux_architect, design_decisions\n\n"
                 "Route to the agent whose archetype BEST fits the task character."
             ),
             messages=[{"role": "user", "content": task}],
@@ -273,7 +308,8 @@ class Orchestrator:
         valid = {"builder", "ops", "meta", "research", "python", "typescript",
                  "content", "memory", "analytics", "monitoring", "media",
                  "backend_architect", "database", "api_builder", "auth_backend",
-                 "infra", "security_audit", "ci_cd", "observability"}
+                 "infra", "security_audit", "ci_cd", "observability",
+                 "product_architect", "ux_architect", "design_decisions"}
         return route if route in valid else "python"
 
     # ── SPAR Gate ─────────────────────────────────────────────────────────
@@ -311,6 +347,14 @@ class Orchestrator:
         Route and execute a task.
         Returns the agent's run result dict.
         """
+        validate_input("orchestrator", OrchestratorInput, {
+            "task":       task,
+            "agent_type": agent_type,
+            "context":    context or {},
+            "provider":   provider,
+            "skills":     skills or [],
+        })
+
         routing_confidence = None
         routing_layer      = None
         if not agent_type:

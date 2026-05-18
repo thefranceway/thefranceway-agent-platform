@@ -104,6 +104,19 @@ Fix quality rules:
                     "required": ["error_message", "fix_summary"],
                 },
             },
+            {
+                "name": "record_fix_outcome",
+                "description": "Record whether a previously applied fix succeeded or failed. Call after build completes.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "error_hash": {"type": "string", "description": "SHA-256 hash of the error message (from record_fix output)"},
+                        "fix_hash":   {"type": "string", "description": "Identifier for the specific fix applied"},
+                        "success":    {"type": "boolean", "description": "True if build passed after the fix, False if still failing"},
+                    },
+                    "required": ["error_hash", "fix_hash", "success"],
+                },
+            },
         ] + AD4M_TOOL_DEFS
 
     def execute_tool(self, tool_name: str, tool_input: dict) -> str:
@@ -116,6 +129,12 @@ Fix quality rules:
                 tool_input["error_message"],
                 tool_input["fix_summary"],
                 tool_input.get("fix_code", ""),
+            )
+        if tool_name == "record_fix_outcome":
+            return self.record_fix_outcome(
+                tool_input["error_hash"],
+                tool_input["fix_hash"],
+                bool(tool_input["success"]),
             )
         if tool_name.startswith("ad4m_"):
             return execute_ad4m_tool(tool_name, tool_input)
@@ -137,6 +156,51 @@ Fix quality rules:
             return json.dumps({"written": True, "path": path, "lines": content.count("\n")})
         except Exception as e:
             return json.dumps({"error": str(e)})
+
+    def record_fix_outcome(self, error_hash: str, fix_hash: str, success: bool) -> str:
+        """
+        Record the outcome of a fix attempt.
+        Reads the current success-rate link, increments attempts (+1) and successes (+1 if success),
+        and writes it back to AD4M at build://error/{hash} → franc://fix-success-rate.
+        """
+        source_uri = f"build://error/{error_hash}"
+        rate_uri   = f"build://fix-rate/{error_hash}"
+
+        # Read current stats
+        current_raw = execute_ad4m_tool("ad4m_read_links", {
+            "perspective_uuid": PERSPECTIVE_UUID,
+            "source":    source_uri,
+            "predicate": "franc://fix-success-rate",
+        })
+        try:
+            links = json.loads(current_raw)
+            if links and isinstance(links, list) and links[0].get("target", "").startswith("literal://"):
+                existing = json.loads(links[0]["target"].replace("literal://", "", 1))
+                attempts  = existing.get("attempts", 0)
+                successes = existing.get("successes", 0)
+            else:
+                attempts = successes = 0
+        except Exception:
+            attempts = successes = 0
+
+        attempts  += 1
+        successes += 1 if success else 0
+        rate       = round(successes / attempts, 4) if attempts else 0.0
+
+        payload = json.dumps({"attempts": attempts, "successes": successes, "success_rate": rate})
+        execute_ad4m_tool("ad4m_write_link", {
+            "perspective_uuid": PERSPECTIVE_UUID,
+            "source":    source_uri,
+            "predicate": "franc://fix-success-rate",
+            "target":    f"literal://{payload}",
+        })
+        return json.dumps({
+            "error_hash": error_hash,
+            "fix_hash":   fix_hash,
+            "attempts":   attempts,
+            "successes":  successes,
+            "success_rate": rate,
+        })
 
     def _record_fix(self, error_message: str, fix_summary: str, fix_code: str = "") -> str:
         error_hash = _error_hash(error_message)

@@ -15,6 +15,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+try:
+    from core.contracts     import validate_input
+    from core.agent_schemas import TaskQueueInput
+except (ImportError, ModuleNotFoundError):
+    try:
+        from contracts     import validate_input
+        from agent_schemas import TaskQueueInput
+    except (ImportError, ModuleNotFoundError):
+        def validate_input(*a, **kw): pass  # type: ignore
+        TaskQueueInput = None               # type: ignore
+
 PLATFORM_DIR = Path(__file__).parent.parent
 DB_PATH      = PLATFORM_DIR / "registry" / "agent_platform.db"
 
@@ -45,6 +56,13 @@ class TaskQueue:
         input_data:  dict = None,
     ) -> str:
         """Enqueue a new task. Returns task_id."""
+        validate_input("task_queue", TaskQueueInput, {
+            "description": description,
+            "agent_type":  agent_type,
+            "agent_id":    agent_id,
+            "priority":    priority,
+            "input_data":  input_data or {},
+        })
         task_id = str(uuid.uuid4())
         conn    = get_db()
         conn.execute("""

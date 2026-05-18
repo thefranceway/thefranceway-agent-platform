@@ -20,6 +20,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+try:
+    from core.contracts     import validate_output
+    from core.agent_schemas import SwarmPipelineStep
+except (ImportError, ModuleNotFoundError):
+    try:
+        from contracts     import validate_output
+        from agent_schemas import SwarmPipelineStep
+    except (ImportError, ModuleNotFoundError):
+        def validate_output(*a, **kw): pass  # type: ignore
+        SwarmPipelineStep = None             # type: ignore
+
 PLATFORM_DIR = Path(__file__).parent.parent
 DB_PATH      = PLATFORM_DIR / "registry" / "agent_platform.db"
 
@@ -188,6 +199,12 @@ class SwarmCoordinator:
                 swarm_id, agent_type, steps[i + 1] if i + 1 < len(steps) else "swarm",
                 swarm_id, "result",
                 {"step": i + 1, "output": result.get("output", "")[:500]}
+            )
+
+            validate_output(
+                f"swarm.step.{agent_type}",
+                SwarmPipelineStep,
+                {"step": i + 1, "agent_type": agent_type, "output": result.get("output", "")},
             )
 
             # Next agent's input = this agent's output + original task context
