@@ -40,6 +40,8 @@ def get_db() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
     return conn
 
 
@@ -129,6 +131,13 @@ def init_db():
             ON mabp_outcomes(routing_layer);
         CREATE INDEX IF NOT EXISTS idx_mabp_agent_type
             ON mabp_outcomes(agent_type);
+
+        CREATE TABLE IF NOT EXISTS rate_limits (
+            api_key TEXT NOT NULL,
+            ts      REAL NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_rate_limits_key_ts
+            ON rate_limits(api_key, ts);
     """)
     conn.commit()
     conn.close()

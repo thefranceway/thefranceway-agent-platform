@@ -1,0 +1,46 @@
+{
+  "date": "2026-05-18",
+  "score": 100,
+  "passed": 9,
+  "total": 9,
+  "checks": {
+    "no_hardcoded_secrets": {
+      "pass": true,
+      "detail": "no hardcoded credential fallbacks"
+    },
+    "wal_swarm": {
+      "pass": true,
+      "detail": "swarm.py WAL mode set"
+    },
+    "wal_base_agent": {
+      "pass": true,
+      "detail": "base_agent.py WAL mode set"
+    },
+    "wal_spar": {
+      "pass": true,
+      "detail": "spar.py WAL mode set"
+    },
+    "wal_mabp_report": {
+      "pass": true,
+      "detail": "mabp_report.py WAL mode set"
+    },
+    "api_auth": {
+      "pass": true,
+      "detail": "api_server bearer auth present"
+    },
+    "requirements_pinned": {
+      "pass": true,
+      "detail": "all deps pinned with =="
+    },
+    "ci_workflow": {
+      "pass": true,
+      "detail": "1 CI workflow(s) found"
+    },
+    "rate_limit_coverage": {
+      "pass": true,
+      "detail": "rate limiter applied to multiple endpoints"
+    }
+  },
+  "regressions": [],
+  "timestamp": "2026-05-18T01:06:48.868409+00:00"
+}

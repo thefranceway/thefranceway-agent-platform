@@ -62,6 +62,14 @@ ROUTING_RULES = [
     ("monitoring",r"\b(brand mention|mention monitor|social listening|track mentions|brand alert|reputation monitor)\b"),
     ("media",     r"\b(transcribe|analyze video|video analysis|extract audio|key frames?|\.mp4|\.mov|\.mkv|\.avi|\.webm|lecture recording|meeting recording|video clip|video file)\b"),
     ("ops",       r"\b(monitor|health check|check site|check all|redeploy|deployment|ops|cron|schedule)\b"),
+    ("backend_architect", r"\b(backend architecture|api schema|openapi spec|supabase schema|backend spec)\b"),
+    ("database",         r"\b(supabase migration|rls policy|database migration|sql migration|seed data)\b"),
+    ("api_builder",      r"\b(hono|build api routes|rest api endpoint|api endpoint typescript)\b"),
+    ("auth_backend",     r"\b(supabase auth|apple sign.in backend|jwt middleware|auth middleware backend)\b"),
+    ("infra",            r"\b(wrangler\.toml|kv namespace config|cloudflare infra|rate limit config|cf infra)\b"),
+    ("security_audit",   r"\b(security audit|rls audit|owasp check|vulnerability scan|missing auth guard)\b"),
+    ("ci_cd",            r"\b(github actions|ci.cd pipeline|deploy workflow|backend workflow|\.yml workflow)\b"),
+    ("observability",    r"\b(sentry setup|health endpoint|logpush|observability setup|/health route)\b"),
     ("typescript",r"\b(typescript|cloudflare worker|wrangler|cf worker|mcp server)\b"),
     ("builder",   r"\b(scaffold|build project|create project|generate project|boilerplate|new repo)\b"),
     ("research",  r"\b(longevity|pubmed|biorxiv|literature review|synthesize papers|weekly digest)\b"),
@@ -116,6 +124,14 @@ def make_agent(agent_type: str, spec: dict = None, provider: str = None):
     from agents.data_analytics_agent             import DataAnalyticsAgent
     from agents.brand_mention_monitor            import BrandMentionMonitorAgent
     from agents.media_agent                      import MediaAgent
+    from agents.backend_architect_agent          import BackendArchitectAgent
+    from agents.database_agent                   import DatabaseAgent
+    from agents.api_builder_agent                import APIBuilderAgent
+    from agents.auth_agent                       import AuthAgent
+    from agents.infra_agent                      import InfraAgent
+    from agents.security_audit_agent             import SecurityAuditAgent
+    from agents.ci_cd_agent                      import CICDAgent
+    from agents.observability_agent              import ObservabilityAgent
 
     kwargs = {"provider": provider} if provider else {}
 
@@ -129,8 +145,16 @@ def make_agent(agent_type: str, spec: dict = None, provider: str = None):
         "content":    lambda: ContentStrategistAgent(**kwargs),
         "memory":     lambda: MemoryAgent(**kwargs),
         "analytics":  lambda: DataAnalyticsAgent(**kwargs),
-        "monitoring": lambda: BrandMentionMonitorAgent(name="Brand Mention Monitor", **kwargs),
-        "media":      lambda: MediaAgent(**kwargs),
+        "monitoring":        lambda: BrandMentionMonitorAgent(name="Brand Mention Monitor", **kwargs),
+        "media":             lambda: MediaAgent(**kwargs),
+        "backend_architect": lambda: BackendArchitectAgent(name="Backend Architect Agent", **kwargs),
+        "database":          lambda: DatabaseAgent(name="Database Agent", **kwargs),
+        "api_builder":       lambda: APIBuilderAgent(name="API Builder Agent", **kwargs),
+        "auth_backend":      lambda: AuthAgent(name="Auth Agent", **kwargs),
+        "infra":             lambda: InfraAgent(name="Infra Agent", **kwargs),
+        "security_audit":    lambda: SecurityAuditAgent(name="Security Audit Agent", **kwargs),
+        "ci_cd":             lambda: CICDAgent(name="CI/CD Agent", **kwargs),
+        "observability":     lambda: ObservabilityAgent(name="Observability Agent", **kwargs),
     }
     if agent_type not in factories:
         raise ValueError(f"Unknown agent type: {agent_type}. Valid: {list(factories)}")
@@ -237,15 +261,19 @@ class Orchestrator:
                 "Each agent maps to an empirically-derived MABP behavioral archetype.\n\n"
                 f"{archetype_block}\n\n"
                 "Respond with ONLY one agent type from this list (no other text):\n"
-                "  builder, ops, meta, research, python, typescript, solana,\n"
-                "  content, memory, analytics, monitoring\n\n"
+                "  builder, ops, meta, research, python, typescript,\n"
+                "  content, memory, analytics, monitoring, media,\n"
+                "  backend_architect, database, api_builder, auth_backend,\n"
+                "  infra, security_audit, ci_cd, observability\n\n"
                 "Route to the agent whose archetype BEST fits the task character."
             ),
             messages=[{"role": "user", "content": task}],
         )
         route = response.content[0].text.strip().lower()
-        valid = {"builder", "ops", "meta", "research", "python", "typescript", "solana",
-                 "content", "memory", "analytics", "monitoring", "media"}
+        valid = {"builder", "ops", "meta", "research", "python", "typescript",
+                 "content", "memory", "analytics", "monitoring", "media",
+                 "backend_architect", "database", "api_builder", "auth_backend",
+                 "infra", "security_audit", "ci_cd", "observability"}
         return route if route in valid else "python"
 
     # ── SPAR Gate ─────────────────────────────────────────────────────────
@@ -462,7 +490,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Agent Platform Orchestrator")
     parser.add_argument("--task",        type=str,           help="Dispatch a task")
-    parser.add_argument("--mode",        type=str,           help="Force agent type (builder/ops/meta/python/typescript/solana)")
+    parser.add_argument("--mode",        type=str,           help="Force agent type (builder/ops/meta/python/typescript/content/memory/analytics/monitoring/media/backend_architect/database/api_builder/auth_backend/infra/security_audit/ci_cd/observability)")
     parser.add_argument("--route-only",  action="store_true", help="Show routing decision without executing")
     parser.add_argument("--run-queue",   action="store_true", help="Process all pending queue tasks")
     parser.add_argument("--status",      action="store_true", help="Show platform status")
