@@ -28,7 +28,7 @@ jobs:
           python -c "from core.task_queue import get_queue; print('task_queue OK')"
           python -c "from core.agent_registry import get_registry; print('agent_registry OK')"
           python -c "from core.swarm import get_swarm; print('swarm OK')"
-          python -c "from core.spar import SparKit; print('spar OK')"
+          python -c "from core.spar import SPARDebater; print('spar OK')"
           python -c "from core.skill_loader import get_skill_loader; print('skill_loader OK')"
 
       - name: Stack eval — deterministic checks
@@ -42,7 +42,7 @@ jobs:
 
       - name: Check for hardcoded credential fallbacks
         run: |
-          if grep -rn 'os\.getenv.*"[A-Za-z0-9_\-]\{20,\}"' --include="*.py" .; then
+          if grep -rn -E 'os\.getenv\([^,]+,\s*"[A-Za-z0-9_-]{20,}"' --include="*.py" .; then
             echo "FAIL: hardcoded credential fallback detected"
             exit 1
           fi

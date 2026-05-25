@@ -18,6 +18,7 @@ Logs: ~/projects/agent-platform/logs/morning_briefing.log
 
 import json
 import logging
+import os
 import ssl
 import sys
 import urllib.request
@@ -29,7 +30,7 @@ from core.base_agent import BaseAgent, JSONVectorStore
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-BOT_TOKEN     = "REDACTED-TELEGRAM-BOT-TOKEN"
+BOT_TOKEN     = os.getenv("TELEGRAM_BOT_TOKEN", "")
 BOT_API       = f"https://api.telegram.org/bot{BOT_TOKEN}"
 OWNER_CHAT_ID = 7049234595
 
@@ -153,6 +154,9 @@ def _get_day_energy(config: dict) -> str:
 
 def _send_telegram(text: str) -> bool:
     """Send a message to the owner via Telegram bot."""
+    if not BOT_TOKEN:
+        log.info("Telegram bot inactive — TELEGRAM_BOT_TOKEN not set")
+        return False
     payload = json.dumps({
         "chat_id":    OWNER_CHAT_ID,
         "text":       text,
