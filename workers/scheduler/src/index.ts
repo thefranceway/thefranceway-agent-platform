@@ -20,6 +20,7 @@ type Env = {
   DB: D1Database;
   WEBHOOK_URL: string;
   PLATFORM_VERSION: string;
+  PLATFORM_API_KEY: string;
 };
 
 function json(data: unknown, status = 200): Response {
@@ -60,7 +61,13 @@ async function processPendingTasks(env: Env): Promise<{ processed: number; error
       const webhookUrl = env.WEBHOOK_URL || 'http://localhost:8788/run-queue';
       const resp = await fetch(webhookUrl, {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type':  'application/json',
+          // Required whenever the Python server has PLATFORM_API_KEY set —
+          // without this, /run-queue 401s on every call and the task below
+          // gets reset to pending forever (see the 401 branch below).
+          'Authorization': `Bearer ${env.PLATFORM_API_KEY ?? ''}`,
+        },
         body:    JSON.stringify({
           task_id:     task.id,
           description: task.description,
@@ -82,6 +89,16 @@ async function processPendingTasks(env: Env): Promise<{ processed: number; error
           task.id,
         ).run();
         processed++;
+      } else if (resp.status === 401) {
+        // Auth failure will never succeed on retry without a config fix —
+        // resetting to pending and continuing the loop just retries the
+        // same 401 every 5 minutes forever. Fail this tick loudly instead.
+        await env.DB.prepare(`
+          UPDATE tasks SET status = 'pending', started_at = NULL WHERE id = ?
+        `).bind(task.id).run();
+        console.error(`[scheduler] 401 from ${webhookUrl} — check PLATFORM_API_KEY matches the Python server's env var`);
+        errors++;
+        break;
       } else {
         // Webhook call failed — reset to pending for retry
         await env.DB.prepare(`
