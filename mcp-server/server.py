@@ -148,6 +148,17 @@ TOOLS = [
         },
     },
     {
+        "name":        "delete_agent",
+        "description": "Permanently remove an agent from the registry (DB + agents.json). Pass agent_id or name.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string", "description": "Agent id to delete"},
+                "name":     {"type": "string", "description": "Agent name to delete (used if agent_id omitted)"},
+            },
+        },
+    },
+    {
         "name":        "create_agent_from_archetype",
         "description": (
             "Build a new agent spec using the MABP Agent Building Protocol. "
@@ -483,6 +494,18 @@ def handle(req: dict) -> dict:
                 from core.task_queue import get_queue
                 count = get_queue().clear_failed_tasks()
                 return text_result(rid, json.dumps({"cleared": count, "status": "ok"}, indent=2))
+            except Exception as e:
+                return error_response(rid, -32603, str(e))
+
+        # ── delete_agent ───────────────────────────────────────────────────
+
+        if tool == "delete_agent":
+            try:
+                agent_id = args.get("agent_id")
+                name     = args.get("name")
+                from core.agent_registry import get_registry
+                deleted = get_registry().delete_agent(agent_id=agent_id, name=name)
+                return text_result(rid, json.dumps({"deleted": deleted, "status": "ok"}, indent=2))
             except Exception as e:
                 return error_response(rid, -32603, str(e))
 
