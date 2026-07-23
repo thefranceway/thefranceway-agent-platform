@@ -352,21 +352,34 @@ async def agent_health(_auth: None = Depends(_require_api_key)):
 async def platform_status():
     from core.agent_registry import get_registry
     from core.task_queue     import get_queue
+    from core.franc_gate     import gate_status
     registry = get_registry()
     queue    = get_queue()
     return {
         "platform":    "agent-platform v1.0.0",
         "api_key_set": bool(os.getenv("ANTHROPIC_API_KEY")),
-        "franc_gate": {
-            "enabled": FRANC_GATE_ENABLED,
-            "required_balance": FRANC_MIN_BALANCE,
-            "mint": FRANC_MINT,
-            "buy_url": "https://pump.fun/coin/BJ8MySahjvB3XFrKWxhFR4wsnjpgqY4gGRmU9wXHLCvu",
-        },
+        "franc_gate":  gate_status(),
         "registry":    registry.summary(),
         "queue":       queue.queue_stats(),
         "timestamp":   datetime.now(timezone.utc).isoformat(),
     }
+
+
+class WalletVerifyRequest(BaseModel):
+    address:   str
+    message:   str
+    signature: str
+
+
+@app.post("/wallet/verify")
+async def wallet_verify(body: WalletVerifyRequest):
+    """
+    Verify wallet ownership (ed25519 signature check) and real FRANC balance.
+    Distinct from validate_wallet.py, which only checks address *format* —
+    this is the actual ownership+balance proof behind franc_gate.
+    """
+    from core.franc_gate import check_franc_gate
+    return await asyncio.to_thread(check_franc_gate, body.address, body.message, body.signature)
 
 
 @app.post("/task")
