@@ -2,6 +2,7 @@ anthropic==0.84.0
 certifi==2026.2.25
 fastapi==0.133.1
 langsmith==0.7.7
+pynacl==1.5.0
 python-dotenv==1.2.1
 requests==2.32.5
 telethon==1.42.0
