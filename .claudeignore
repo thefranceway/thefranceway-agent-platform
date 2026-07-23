@@ -8,6 +8,4 @@ __pycache__/
 *.sqlite
 *.sqlite3
 mcp-server/node_modules/
-python-cli-project/
-rate-limiter/
 stack/claude-tools.html
