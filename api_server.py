@@ -18,6 +18,7 @@ Run: uvicorn api_server:app --port 8788 --reload
 """
 
 import asyncio
+import hmac
 import os
 import sys
 import json
@@ -49,6 +50,18 @@ app.add_middleware(
 
 PLATFORM_DIR = Path(__file__).parent
 
+
+@app.on_event("startup")
+async def _init_db_on_startup():
+    """
+    Force DB/table initialization (agents, tasks, rate_limits, etc.) at boot
+    rather than lazily on first request. Without this, if the very first hit
+    to a fresh deployment lands on /route, _check_rate_limit() can 500 with
+    "no such table: rate_limits" before AgentRegistry.__init__ has ever run.
+    """
+    from core.agent_registry import get_registry
+    get_registry()
+
 # ── Rate limiter (in-memory, per API key) ─────────────────────────────────────
 # Sliding window: max calls per minute per key
 RATE_LIMITS = {
@@ -66,6 +79,11 @@ def _check_rate_limit(api_key: str, limit: int = DEFAULT_RATE_LIMIT) -> bool:
     cutoff = now - 60.0
     conn   = get_db()
     try:
+        # BEGIN IMMEDIATE takes the write lock up front, so the check-then-insert
+        # below is atomic across concurrent requests on the same api_key — without
+        # it, two overlapping requests can both read count < limit before either
+        # commits its INSERT, letting both through.
+        conn.execute("BEGIN IMMEDIATE")
         conn.execute("DELETE FROM rate_limits WHERE api_key = ? AND ts < ?", (api_key, cutoff))
         count = conn.execute(
             "SELECT COUNT(*) FROM rate_limits WHERE api_key = ?", (api_key,)
@@ -169,7 +187,7 @@ def _require_api_key(request: Request) -> None:
     if not api_key:
         return  # dev mode: no key configured → open
     auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer ") or auth[7:] != api_key:
+    if not auth.startswith("Bearer ") or not hmac.compare_digest(auth[7:], api_key):
         raise HTTPException(401, "Unauthorized")
 
 
@@ -195,20 +213,26 @@ async def route_task(
     """
     # Auth — require RapidAPI key in prod
     RAPIDAPI_PROXY_SECRET = os.getenv("RAPIDAPI_PROXY_SECRET", "")
-    if RAPIDAPI_PROXY_SECRET and x_rapidapi_proxy_secret != RAPIDAPI_PROXY_SECRET:
+    if RAPIDAPI_PROXY_SECRET and not hmac.compare_digest(x_rapidapi_proxy_secret or "", RAPIDAPI_PROXY_SECRET):
         raise HTTPException(401, "Unauthorized. Valid X-RapidAPI-Key required.")
 
+    # A caller can only get a stable rate-limit bucket by presenting a real,
+    # consistent key — an empty/missing key is never bucketed as "anon" when
+    # the proxy secret is enforced, since that lets anyone dodge limits by
+    # simply omitting the header on every request.
+    if RAPIDAPI_PROXY_SECRET and not x_rapidapi_key:
+        raise HTTPException(401, "Unauthorized. X-RapidAPI-Key required.")
     api_key = x_rapidapi_key or "anon"
 
     # Rate limit
-    if not _check_rate_limit(api_key):
+    if not await asyncio.to_thread(_check_rate_limit, api_key):
         raise HTTPException(429, "Rate limit exceeded. Upgrade your plan for higher limits.")
 
     # Fingerprint
-    _fingerprint_request(request, api_key, body.task)
+    await asyncio.to_thread(_fingerprint_request, request, api_key, body.task)
 
     # Notify owner via Telegram on every inbound /route call
-    _notify_owner(api_key, body.task)
+    await asyncio.to_thread(_notify_owner, api_key, body.task)
 
     from core.task_queue  import get_queue
     queue   = get_queue()
@@ -390,7 +414,7 @@ async def submit_task(
     _auth:            None = Depends(_require_api_key),
 ):
     api_key = request.headers.get("Authorization", request.client.host if request.client else "anon")
-    if not _check_rate_limit(api_key):
+    if not await asyncio.to_thread(_check_rate_limit, api_key):
         raise HTTPException(429, "Rate limit exceeded.")
 
     from core.task_queue  import get_queue
@@ -421,7 +445,7 @@ async def clear_failed_tasks(_auth: None = Depends(_require_api_key)):
 
 
 @app.get("/task/{task_id}")
-async def get_task(task_id: str):
+async def get_task(task_id: str, _auth: None = Depends(_require_api_key)):
     from core.task_queue import get_queue
     task = get_queue().get_task(task_id)
     if not task:
@@ -519,7 +543,7 @@ async def run_swarm(body: SwarmRequest, request: Request, _auth: None = Depends(
       pipeline     — agents are executed in order, each output feeds the next
     """
     api_key = request.headers.get("Authorization", request.client.host if request.client else "anon")
-    if not _check_rate_limit(api_key, limit=RATE_LIMITS["pro"]):
+    if not await asyncio.to_thread(_check_rate_limit, api_key, limit=RATE_LIMITS["pro"]):
         raise HTTPException(429, "Rate limit exceeded.")
 
     from core.swarm import get_swarm
