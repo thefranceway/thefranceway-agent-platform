@@ -122,7 +122,7 @@ The system prompt you write IS the agent's identity. Write it with that weight."
                         "type":               {"type": "string", "description": "builder|ops|meta|coding_expert|research|monitoring|custom"},
                         "system_prompt":      {"type": "string"},
                         "tools":              {"type": "array",  "items": {"type": "string"}},
-                        "behavioral_profile": {"type": "string", "enum": ["Architect", "Substrate", "Philosopher", "Agent"]},
+                        "behavioral_profile": {"type": "string", "enum": ["Architect", "Substrate", "Philosopher", "Agent", "Resident"]},
                         "knowledge_base":     {"type": "string"},
                         "description":        {"type": "string"},
                     },
