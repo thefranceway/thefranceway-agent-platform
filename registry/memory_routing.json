@@ -10,7 +10,6 @@
   "Coasys Watcher":            ["kb_desci_news", "kb_longevity"],
   "Python Expert":             ["kb_typescript", "kb_solana"],
   "TypeScript Expert":         ["kb_python", "kb_solana"],
-  "Solana Expert":             ["kb_typescript", "kb_python"],
   "Memory Agent":              ["kb_builder", "kb_ops", "kb_meta", "kb_python", "kb_typescript",
                                 "kb_solana", "kb_longevity", "kb_content_strategist",
                                 "kb_desci_news", "kb_data_analytics", "kb_telegram_inbox",
