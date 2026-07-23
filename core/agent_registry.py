@@ -316,6 +316,36 @@ class AgentRegistry:
         self._save_json(agents)
         return True
 
+    def delete_agent(self, agent_id: str = None, name: str = None) -> bool:
+        """
+        Permanently remove an agent from both the SQLite DB and agents.json.
+        Unlike disable_agent() (soft — sets enabled=0), this actually deletes
+        the row/entry. Pass either agent_id or name. Returns True if a row was
+        found and deleted, False if no match existed.
+        """
+        if not agent_id and not name:
+            raise ValueError("delete_agent requires agent_id or name")
+
+        if not agent_id and name:
+            existing = self.get_agent_by_name(name)
+            if not existing:
+                return False
+            agent_id = existing["id"]
+
+        conn = get_db()
+        cur = conn.execute("DELETE FROM agents WHERE id = ?", (agent_id,))
+        conn.commit()
+        deleted_from_db = cur.rowcount > 0
+        conn.close()
+
+        agents = self._load_json()
+        remaining = [a for a in agents if a["id"] != agent_id]
+        deleted_from_json = len(remaining) < len(agents)
+        if deleted_from_json:
+            self._save_json(remaining)
+
+        return deleted_from_db or deleted_from_json
+
     def _load_json(self) -> list:
         if REGISTRY_PATH.exists():
             return json.loads(REGISTRY_PATH.read_text())
