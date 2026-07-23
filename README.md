@@ -12,7 +12,15 @@ A production multi-agent system built on the Anthropic SDK. Agents have behavior
 pip install thefranceway-agent-platform
 ```
 
-**For Claude Code / Cursor agents:**
+Optional extras:
+```bash
+pip install "thefranceway-agent-platform[embeddings]"  # sentence-transformers semantic search
+pip install "thefranceway-agent-platform[langsmith]"    # LangSmith tracing
+```
+
+**For Claude Code / Cursor agents** — this does *not* install the package.
+It writes a `SKILL.md` reference to `~/.claude/skills/` teaching the assistant
+the `BaseAgent` pattern used throughout this repo, nothing more:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/thefranceway/thefranceway-agent-platform/main/install.sh | bash
