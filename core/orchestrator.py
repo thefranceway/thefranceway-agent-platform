@@ -374,8 +374,34 @@ class Orchestrator:
             spar_result = spar.run(task)
             if not spar_result["proceed"]:
                 print(f"[Orchestrator] SPAR STOP — task blocked. Gaps: {spar_result['gaps']}")
+                blocked_output = f"SPAR review blocked this task.\nRecommendation: {spar_result['recommendation']}\nGaps: {spar_result['gaps']}"
+                if task_id:
+                    # A SPAR stop is a terminal outcome, not an error — mark the
+                    # task done (not failed) so it never sits at pending/running
+                    # forever. Previously this path returned without touching the
+                    # queue at all, orphaning any task submitted through the async
+                    # queue path.
+                    self.queue.complete_task(
+                        task_id,
+                        {
+                            "output":     blocked_output,
+                            "tool_calls": 0,
+                            "iterations": 0,
+                            "spar_result": spar_result,
+                        },
+                        agent_type="spar",
+                    )
+                self.queue.log_mabp_outcome(
+                    task_id            = task_id or "",
+                    task_text          = task,
+                    agent_type         = "spar",
+                    routing_layer      = routing_layer or "unknown",
+                    routing_confidence = routing_confidence or 0.0,
+                    shadow_summary     = {},
+                    had_error          = False,
+                )
                 return {
-                    "output":          f"SPAR review blocked this task.\nRecommendation: {spar_result['recommendation']}\nGaps: {spar_result['gaps']}",
+                    "output":          blocked_output,
                     "agent_type":      "spar",
                     "spar_result":     spar_result,
                     "tool_calls":      [],
