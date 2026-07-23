@@ -734,9 +734,10 @@ class BaseAgent:
                     "ANTHROPIC_API_KEY not set. "
                     "Add: export ANTHROPIC_API_KEY='sk-ant-...' to ~/.zshrc"
                 )
-            proxy_url = os.getenv("METACLAW_PROXY_URL")
-            if proxy_url:
-                return anthropic.Anthropic(api_key="metaclaw", base_url=proxy_url)
+            # Bypass MetaClaw proxy — it's a skills-only proxy, not suitable for
+            # direct agent calls (mirrors agents/council_agent.py._make_client()).
+            # Routing general chat completions through it here was the root cause
+            # of platform-wide 503s whenever the local MetaClaw daemon hiccuped.
             return anthropic.Anthropic(api_key=key)
 
         elif self.provider == "gemini":

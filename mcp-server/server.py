@@ -330,16 +330,14 @@ def handle(req: dict) -> dict:
                         "note":       "Use get_task_status to check progress",
                     }))
 
-                # Synchronous: run now
+                # Synchronous: run now. Dispatch directly by task_id — do not call
+                # claim_task() here, since it claims globally by priority/age
+                # rather than the specific task just pushed, which could steal
+                # (and orphan) an unrelated pending task under concurrent load.
+                # api_server.py's _run_task already uses this safe pattern.
                 from core.orchestrator import Orchestrator
                 orch   = Orchestrator()
-                claimed = queue.claim_task()
-
-                if claimed and claimed["id"] == task_id:
-                    result = orch.dispatch(description, agent_type=agent_type, task_id=task_id)
-                else:
-                    # Queue race (shouldn't happen in single-user mode)
-                    result = orch.dispatch(description, agent_type=agent_type)
+                result = orch.dispatch(description, agent_type=agent_type, task_id=task_id)
 
                 output = {
                     "task_id":    task_id,
