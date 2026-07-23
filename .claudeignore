@@ -10,3 +10,4 @@ __pycache__/
 mcp-server/node_modules/
 python-cli-project/
 rate-limiter/
+stack/claude-tools.html
