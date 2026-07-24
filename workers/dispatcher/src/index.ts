@@ -1,12 +1,22 @@
 /**
  * Agent Platform — Dispatcher Worker
  * ====================================
- * Receives HTTP task requests → writes to D1 queue → returns task_id
+ * Public HTTP entry point — proxies to api_server.py (the real, canonical
+ * task store) instead of maintaining its own D1 copy.
  *
- * Endpoints:
+ * D1 used to be a second, disconnected task queue from core/task_queue.py's
+ * SQLite store — a task submitted here never showed up in /tasks on the
+ * Python side, and vice versa. The orchestrator that actually executes tasks
+ * has to run locally (needs the Anthropic key, local agent code, local
+ * memory), so it can never be purely edge-native — meaning SQLite was always
+ * the only system that could be the real source of truth. This Worker is now
+ * a thin proxy so there's exactly one queue, not two.
+ *
+ * Endpoints (same paths as before; response shapes now come straight from
+ * api_server.py rather than a hand-rolled D1 shape):
  *   POST /task          — Submit a task
  *   GET  /task/:id      — Get task status
- *   GET  /tasks         — List recent tasks
+ *   GET  /tasks          — List recent tasks
  *   GET  /agents        — List registered agents
  *   GET  /status        — Platform health
  *
@@ -20,7 +30,8 @@ const CORS = {
 };
 
 type Env = {
-  DB: D1Database;
+  BACKEND_URL: string;       // e.g. https://api.thefranceway.com
+  PLATFORM_API_KEY: string;  // must match the Python server's PLATFORM_API_KEY
   PLATFORM_VERSION: string;
 };
 
@@ -31,38 +42,26 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
-function generateId(): string {
-  return crypto.randomUUID();
-}
-
-// ── D1 helpers ────────────────────────────────────────────────────────────────
-
-async function initSchema(db: D1Database): Promise<void> {
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS tasks (
-      id          TEXT PRIMARY KEY,
-      description TEXT NOT NULL,
-      agent_type  TEXT,
-      status      TEXT DEFAULT 'pending',
-      priority    INTEGER DEFAULT 5,
-      input       TEXT,
-      output      TEXT,
-      error       TEXT,
-      created_at  TEXT,
-      started_at  TEXT,
-      ended_at    TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS agents (
-      id                 TEXT PRIMARY KEY,
-      name               TEXT NOT NULL,
-      type               TEXT NOT NULL,
-      model              TEXT DEFAULT 'claude-sonnet-4-6',
-      behavioral_profile TEXT,
-      enabled            INTEGER DEFAULT 1,
-      created_at         TEXT
-    );
-  `);
+async function proxy(
+  env: Env,
+  path: string,
+  init: RequestInit = {},
+): Promise<Response> {
+  const backendUrl = env.BACKEND_URL || 'http://localhost:8788';
+  const resp = await fetch(`${backendUrl}${path}`, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${env.PLATFORM_API_KEY ?? ''}`,
+      ...(init.headers ?? {}),
+    },
+    signal: AbortSignal.timeout(30_000),
+  });
+  const body = await resp.text();
+  return new Response(body, {
+    status:  resp.status,
+    headers: { ...CORS, 'Content-Type': 'application/json' },
+  });
 }
 
 // ── Route handlers ────────────────────────────────────────────────────────────
@@ -74,110 +73,19 @@ async function handleSubmitTask(request: Request, env: Env): Promise<Response> {
   } catch {
     return json({ error: 'Invalid JSON body' }, 400);
   }
-
   if (!body.description) {
     return json({ error: 'description is required' }, 400);
   }
-
-  const taskId    = generateId();
-  const createdAt = new Date().toISOString();
-
-  try {
-    await env.DB.prepare(`
-      INSERT INTO tasks (id, description, agent_type, status, priority, created_at)
-      VALUES (?, ?, ?, 'pending', ?, ?)
-    `).bind(
-      taskId,
-      body.description,
-      body.agent_type ?? null,
-      body.priority ?? 5,
-      createdAt,
-    ).run();
-
-    return json({
-      task_id:    taskId,
-      status:     'pending',
-      agent_type: body.agent_type ?? 'auto-routed',
-      created_at: createdAt,
-      note:       'Task queued. Poll GET /task/' + taskId + ' for status.',
-    }, 201);
-  } catch (e) {
-    // Schema might not exist yet — init and retry
-    await initSchema(env.DB);
-    await env.DB.prepare(`
-      INSERT INTO tasks (id, description, agent_type, status, priority, created_at)
-      VALUES (?, ?, ?, 'pending', ?, ?)
-    `).bind(taskId, body.description, body.agent_type ?? null, body.priority ?? 5, createdAt).run();
-
-    return json({ task_id: taskId, status: 'pending', created_at: createdAt }, 201);
-  }
-}
-
-async function handleGetTask(taskId: string, env: Env): Promise<Response> {
-  const task = await env.DB.prepare(
-    'SELECT * FROM tasks WHERE id = ?'
-  ).bind(taskId).first();
-
-  if (!task) {
-    return json({ error: 'Task not found', task_id: taskId }, 404);
-  }
-
-  // Parse JSON fields
-  const output = task.output ? JSON.parse(task.output as string) : null;
-  return json({ ...task, output });
-}
-
-async function handleListTasks(url: URL, env: Env): Promise<Response> {
-  const status = url.searchParams.get('status');
-  const limit  = Math.min(parseInt(url.searchParams.get('limit') ?? '20'), 100);
-
-  let query  = 'SELECT id, description, agent_type, status, priority, created_at, ended_at FROM tasks';
-  const params: unknown[] = [];
-
-  if (status) {
-    query += ' WHERE status = ?';
-    params.push(status);
-  }
-  query += ' ORDER BY created_at DESC LIMIT ?';
-  params.push(limit);
-
-  const { results } = await env.DB.prepare(query).bind(...params).all();
-  return json({ tasks: results, count: results.length });
-}
-
-async function handleListAgents(url: URL, env: Env): Promise<Response> {
-  const type  = url.searchParams.get('type');
-  let query   = 'SELECT * FROM agents WHERE enabled = 1';
-  const params: unknown[] = [];
-
-  if (type) {
-    query += ' AND type = ?';
-    params.push(type);
-  }
-  query += ' ORDER BY created_at DESC';
-
-  const { results } = await env.DB.prepare(query).bind(...params).all();
-  return json({ agents: results, count: results.length });
-}
-
-async function handleStatus(env: Env): Promise<Response> {
-  const [pending, running, done, failed] = await Promise.all([
-    env.DB.prepare("SELECT COUNT(*) as n FROM tasks WHERE status = 'pending'").first<{ n: number }>(),
-    env.DB.prepare("SELECT COUNT(*) as n FROM tasks WHERE status = 'running'").first<{ n: number }>(),
-    env.DB.prepare("SELECT COUNT(*) as n FROM tasks WHERE status = 'done'").first<{ n: number }>(),
-    env.DB.prepare("SELECT COUNT(*) as n FROM tasks WHERE status = 'failed'").first<{ n: number }>(),
-  ]).catch(() => [null, null, null, null]);
-
-  return json({
-    platform:  'agent-dispatcher',
-    version:   env.PLATFORM_VERSION ?? '1.0.0',
-    queue: {
-      pending: pending?.n ?? 0,
-      running: running?.n ?? 0,
-      done:    done?.n    ?? 0,
-      failed:  failed?.n  ?? 0,
-    },
-    timestamp: new Date().toISOString(),
+  // async_mode: true preserves the original "submit, get task_id back
+  // immediately, poll for the result" contract this endpoint always had.
+  return proxy(env, '/task', {
+    method: 'POST',
+    body: JSON.stringify({
+      description: body.description,
+      agent_type:  body.agent_type,
+      priority:    body.priority ?? 5,
+      async_mode:  true,
+    }),
   });
 }
 
@@ -200,22 +108,22 @@ export default {
     // GET /task/:id — get task status
     const taskMatch = url.pathname.match(/^\/task\/([a-f0-9-]{36})$/);
     if (method === 'GET' && taskMatch) {
-      return handleGetTask(taskMatch[1], env);
+      return proxy(env, `/task/${taskMatch[1]}`);
     }
 
     // GET /tasks — list tasks
     if (method === 'GET' && url.pathname === '/tasks') {
-      return handleListTasks(url, env);
+      return proxy(env, `/tasks${url.search}`);
     }
 
     // GET /agents — list agents
     if (method === 'GET' && url.pathname === '/agents') {
-      return handleListAgents(url, env);
+      return proxy(env, `/agents${url.search}`);
     }
 
     // GET /status or GET /
     if (method === 'GET' && (url.pathname === '/status' || url.pathname === '/')) {
-      return handleStatus(env);
+      return proxy(env, '/status');
     }
 
     return json({

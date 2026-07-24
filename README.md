@@ -41,8 +41,7 @@ core/
   skill_loader.py          — MetaClaw skill injection at runtime
   swarm.py                 — Parallel agent execution
 workers/
-  dispatcher/              — Cloudflare Worker: keyword-based agent routing
-  scheduler/               — Cloudflare Worker: cron-driven task scheduling
+  dispatcher/              — Cloudflare Worker: public HTTP entry point, proxies to api_server.py
   mabp-router/             — Cloudflare Worker: behavioral profile routing
 registry/
   agents.json              — Agent registry (id, name, archetype, model)
@@ -190,12 +189,14 @@ print(result["latency_ms"], "ms")
 
 ## Cloudflare Workers
 
-Dispatch a task to the right agent by keyword:
+Submit a task via the public dispatcher URL — it proxies straight through to
+`api_server.py`'s `/task` endpoint (the SQLite-backed queue is the only task
+store; there is no separate Cloudflare-side queue):
 
 ```bash
 curl -X POST https://agent-dispatcher.thefranceway.workers.dev/task \
   -H "Content-Type: application/json" \
-  -d '{"task": "write a post about DeSci"}'
+  -d '{"description": "write a post about DeSci"}'
 ```
 
 Deploy workers:
