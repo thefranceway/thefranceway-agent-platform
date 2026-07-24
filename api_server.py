@@ -28,6 +28,8 @@ from pathlib import Path
 from datetime import datetime, timezone
 from typing import Optional
 
+from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI, HTTPException, Header, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -35,10 +37,24 @@ from pydantic import BaseModel
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    # Force DB/table initialization (agents, tasks, rate_limits, etc.) at boot
+    # rather than lazily on first request. Without this, if the very first
+    # hit to a fresh deployment lands on /route, _check_rate_limit() can 500
+    # with "no such table: rate_limits" before AgentRegistry.__init__ has
+    # ever run.
+    from core.agent_registry import get_registry
+    get_registry()
+    yield
+
+
 app = FastAPI(
     title       = "Agent Platform API",
     description = "Multi-agent system — thefranceway",
     version     = "1.0.0",
+    lifespan    = _lifespan,
 )
 
 app.add_middleware(
@@ -49,18 +65,6 @@ app.add_middleware(
 )
 
 PLATFORM_DIR = Path(__file__).parent
-
-
-@app.on_event("startup")
-async def _init_db_on_startup():
-    """
-    Force DB/table initialization (agents, tasks, rate_limits, etc.) at boot
-    rather than lazily on first request. Without this, if the very first hit
-    to a fresh deployment lands on /route, _check_rate_limit() can 500 with
-    "no such table: rate_limits" before AgentRegistry.__init__ has ever run.
-    """
-    from core.agent_registry import get_registry
-    get_registry()
 
 # ── Rate limiter (in-memory, per API key) ─────────────────────────────────────
 # Sliding window: max calls per minute per key
