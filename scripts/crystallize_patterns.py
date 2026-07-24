@@ -113,7 +113,7 @@ def main():
     # Group by agent + field pattern
     groups: dict[str, list[str]] = defaultdict(list)
     for r in unclassified:
-        key = f"{r.get('agent', 'unknown')}.{r.get('field', 'unknown')}"
+        key = f"{r.get('agent', 'unknown')}.{r.get('expected', 'unknown')}"
         groups[key].append(r.get("got", "")[:200])
 
     print(f"Found {len(unclassified)} unclassified violations across {len(groups)} groups")

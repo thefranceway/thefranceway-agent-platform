@@ -85,8 +85,8 @@ class PlanningInput(AgentInput):
 
 class PlanningOutput(AgentOutput):
     output:  str
-    plan_id: str
-    steps:   list[PlanStep]
+    plan_id: str            = ""
+    steps:   list[PlanStep] = Field(default_factory=list)
     model_config = ConfigDict(extra="allow")
 
 

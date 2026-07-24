@@ -111,27 +111,43 @@ Rules:
         """Parse plan JSON from LLM output. Generates a fallback if parsing fails."""
         plan_id = str(uuid.uuid4())
 
-        # Try to extract JSON block from output
-        for start_char, end_char in [('{', '}'), ('[', ']')]:
-            try:
-                start = raw_output.index('{')
-                end   = raw_output.rindex('}') + 1
-                parsed = json.loads(raw_output[start:end])
-                if "steps" in parsed:
-                    parsed.setdefault("plan_id", plan_id)
-                    # Validate each step has required fields
-                    validated_steps = []
-                    for s in parsed["steps"]:
-                        validated_steps.append({
-                            "step":       int(s.get("step", len(validated_steps) + 1)),
-                            "task":       str(s.get("task", "")),
-                            "agent_type": str(s.get("agent_type", "builder")),
-                            "depends_on": [int(d) for d in s.get("depends_on", [])],
-                        })
-                    parsed["steps"] = validated_steps
-                    return parsed
-            except (ValueError, KeyError, TypeError):
-                pass
+        # Try JSON object { ... }
+        try:
+            start = raw_output.index('{')
+            end   = raw_output.rindex('}') + 1
+            parsed = json.loads(raw_output[start:end])
+            if "steps" in parsed:
+                parsed.setdefault("plan_id", plan_id)
+                validated_steps = []
+                for s in parsed["steps"]:
+                    validated_steps.append({
+                        "step":       int(s.get("step", len(validated_steps) + 1)),
+                        "task":       str(s.get("task", "")),
+                        "agent_type": str(s.get("agent_type", "builder")),
+                        "depends_on": [int(d) for d in s.get("depends_on", [])],
+                    })
+                parsed["steps"] = validated_steps
+                return parsed
+        except (ValueError, KeyError, TypeError):
+            pass
+
+        # Try bare JSON array [ ... ]
+        try:
+            start = raw_output.index('[')
+            end   = raw_output.rindex(']') + 1
+            parsed = json.loads(raw_output[start:end])
+            if isinstance(parsed, list):
+                validated_steps = []
+                for s in parsed:
+                    validated_steps.append({
+                        "step":       int(s.get("step", len(validated_steps) + 1)),
+                        "task":       str(s.get("task", "")),
+                        "agent_type": str(s.get("agent_type", "builder")),
+                        "depends_on": [int(d) for d in s.get("depends_on", [])],
+                    })
+                return {"plan_id": plan_id, "steps": validated_steps}
+        except (ValueError, KeyError, TypeError):
+            pass
 
         # Fallback: single-step plan
         return {

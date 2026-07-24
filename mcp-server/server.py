@@ -31,6 +31,12 @@ from datetime import datetime, timezone
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# Single source of truth for valid agent_type routing keys — see
+# core/orchestrator.py's AGENT_FACTORIES. Built dynamically here so this
+# enum can never drift out of sync with the real factory keys again.
+from core.orchestrator import AGENT_FACTORIES
+AGENT_TYPE_KEYS = sorted(AGENT_FACTORIES.keys())
+
 
 def send(obj):
     sys.stdout.write(json.dumps(obj) + "\n")
@@ -66,8 +72,11 @@ TOOLS = [
                 },
                 "agent_type": {
                     "type":        "string",
-                    "description": "Optional — omit for auto-routing. Force a specific agent: builder | ops | meta | python | typescript | solana",
-                    "enum":        ["builder", "ops", "meta", "python", "typescript", "solana"]
+                    "description": (
+                        "Optional — omit for auto-routing. Force a specific agent: "
+                        + " | ".join(AGENT_TYPE_KEYS)
+                    ),
+                    "enum":        AGENT_TYPE_KEYS
                 },
                 "async_mode": {
                     "type":        "boolean",
@@ -351,12 +360,13 @@ def handle(req: dict) -> dict:
                 result = orch.dispatch(description, agent_type=agent_type, task_id=task_id)
 
                 output = {
-                    "task_id":    task_id,
-                    "agent_type": result.get("agent_type", agent_type or "auto-routed"),
-                    "output":     result.get("output", ""),
-                    "tool_calls": len(result.get("tool_calls", [])),
-                    "iterations": result.get("iterations", 0),
-                    "error":      result.get("error"),
+                    "task_id":            task_id,
+                    "agent_type":         result.get("agent_type", agent_type or "auto-routed"),
+                    "output":             result.get("output", ""),
+                    "tool_calls":         len(result.get("tool_calls", [])),
+                    "iterations":         result.get("iterations", 0),
+                    "execution_verified": result.get("execution_verified", False),
+                    "error":              result.get("error"),
                 }
                 return text_result(rid, json.dumps(output, indent=2))
 
@@ -423,15 +433,21 @@ def handle(req: dict) -> dict:
                 task = get_queue().get_task(task_id)
                 if not task:
                     return text_result(rid, json.dumps({"error": "Task not found", "task_id": task_id}))
+                task_output = task.get("output")
+                execution_verified = (
+                    task_output.get("execution_verified")
+                    if isinstance(task_output, dict) else None
+                )
                 return text_result(rid, json.dumps({
-                    "task_id":    task["id"],
-                    "status":     task["status"],
-                    "agent_type": task.get("agent_type"),
-                    "description": task["description"][:100],
-                    "created_at": task.get("created_at"),
-                    "started_at": task.get("started_at"),
-                    "ended_at":   task.get("ended_at"),
-                    "error":      task.get("error"),
+                    "task_id":            task["id"],
+                    "status":             task["status"],
+                    "agent_type":         task.get("agent_type"),
+                    "description":        task["description"][:100],
+                    "created_at":         task.get("created_at"),
+                    "started_at":         task.get("started_at"),
+                    "ended_at":           task.get("ended_at"),
+                    "execution_verified": execution_verified,
+                    "error":              task.get("error"),
                 }, indent=2))
             except Exception as e:
                 return error_response(rid, -32603, str(e))
@@ -449,12 +465,13 @@ def handle(req: dict) -> dict:
                     return text_result(rid, json.dumps({"error": "Task not found"}))
                 output = task.get("output") or {}
                 return text_result(rid, json.dumps({
-                    "task_id":    task["id"],
-                    "status":     task["status"],
-                    "output":     output.get("output", "") if isinstance(output, dict) else str(output),
-                    "tool_calls": output.get("tool_calls") if isinstance(output, dict) else None,
-                    "error":      task.get("error"),
-                    "ended_at":   task.get("ended_at"),
+                    "task_id":            task["id"],
+                    "status":             task["status"],
+                    "output":             output.get("output", "") if isinstance(output, dict) else str(output),
+                    "tool_calls":         output.get("tool_calls") if isinstance(output, dict) else None,
+                    "execution_verified": output.get("execution_verified") if isinstance(output, dict) else None,
+                    "error":              task.get("error"),
+                    "ended_at":           task.get("ended_at"),
                 }, indent=2))
             except Exception as e:
                 return error_response(rid, -32603, str(e))
@@ -474,10 +491,11 @@ def handle(req: dict) -> dict:
                     "queue":       queue.queue_stats(),
                     "recent_tasks": [
                         {
-                            "id":     t["id"][:8],
-                            "desc":   t["description"][:60],
-                            "status": t["status"],
-                            "agent":  t.get("agent_type"),
+                            "id":       t["id"],
+                            "short_id": t["id"][:8],
+                            "desc":     t["description"][:60],
+                            "status":   t["status"],
+                            "agent":    t.get("agent_type"),
                         }
                         for t in recent
                     ],

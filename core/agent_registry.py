@@ -388,9 +388,9 @@ class AgentRegistry:
             parts = ["1", "0", "1"]
         new_version = ".".join(parts)
 
-        # Snapshot current spec tagged with the new version it represents
+        # Snapshot current spec tagged with the version it was before bumping
         snapshot = {k: v for k, v in agent.items() if k != "version_history"}
-        snapshot["version"] = new_version
+        snapshot["version"] = current_version
         history.append(snapshot)
         if len(history) > 5:
             history = history[-5:]

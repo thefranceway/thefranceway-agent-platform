@@ -115,63 +115,140 @@ def _run_feedback(result: dict):
 
 
 # ── Agent factory ─────────────────────────────────────────────────────────────
+# AGENT_FACTORIES is the single source of truth for valid `agent_type` routing
+# keys. Each value is a function(kwargs) -> agent instance that performs its
+# own lazy import (kept lazy on purpose — avoids paying the import cost of
+# every agent module just to build this dict, and avoids a hard crash on
+# module load if one agent has an unmet optional dependency).
+# mcp-server/server.py imports this dict to build the dispatch_task enum
+# dynamically instead of hardcoding a second, driftable copy of the key list.
+
+def _f_planning_agent(kwargs):
+    from agents.planning_agent import PlanningAgent
+    return PlanningAgent(name="Planning Agent", **kwargs)
+
+def _f_builder(kwargs):
+    from agents.builder_agent import BuilderAgent
+    return BuilderAgent(name="Builder Agent", **kwargs)
+
+def _f_ops(kwargs):
+    from agents.ops_agent import OpsAgent
+    return OpsAgent(name="Ops Agent", **kwargs)
+
+def _f_meta(kwargs):
+    from agents.meta_agent import MetaAgent
+    return MetaAgent(name="Meta Agent", **kwargs)
+
+def _f_research(kwargs):
+    from agents.longevity_research_agent import LongevityResearchAgent
+    return LongevityResearchAgent(**kwargs)
+
+def _f_python(kwargs):
+    from agents.coding_experts.python_expert import PythonExpertAgent
+    return PythonExpertAgent(**kwargs)
+
+def _f_typescript(kwargs):
+    from agents.coding_experts.typescript_expert import TypeScriptExpertAgent
+    return TypeScriptExpertAgent(**kwargs)
+
+def _f_content(kwargs):
+    from agents.content_strategist import ContentStrategistAgent
+    return ContentStrategistAgent(**kwargs)
+
+def _f_memory(kwargs):
+    from agents.memory_agent import MemoryAgent
+    return MemoryAgent(**kwargs)
+
+def _f_analytics(kwargs):
+    from agents.data_analytics_agent import DataAnalyticsAgent
+    return DataAnalyticsAgent(**kwargs)
+
+def _f_monitoring(kwargs):
+    from agents.brand_mention_monitor import BrandMentionMonitorAgent
+    return BrandMentionMonitorAgent(name="Brand Mention Monitor", **kwargs)
+
+def _f_media(kwargs):
+    from agents.media_agent import MediaAgent
+    return MediaAgent(**kwargs)
+
+def _f_backend_architect(kwargs):
+    from agents.backend_architect_agent import BackendArchitectAgent
+    return BackendArchitectAgent(name="Backend Architect Agent", **kwargs)
+
+def _f_database(kwargs):
+    from agents.database_agent import DatabaseAgent
+    return DatabaseAgent(name="Database Agent", **kwargs)
+
+def _f_api_builder(kwargs):
+    from agents.api_builder_agent import APIBuilderAgent
+    return APIBuilderAgent(name="API Builder Agent", **kwargs)
+
+def _f_auth_backend(kwargs):
+    from agents.auth_agent import AuthAgent
+    return AuthAgent(name="Auth Agent", **kwargs)
+
+def _f_infra(kwargs):
+    from agents.infra_agent import InfraAgent
+    return InfraAgent(name="Infra Agent", **kwargs)
+
+def _f_security_audit(kwargs):
+    from agents.security_audit_agent import SecurityAuditAgent
+    return SecurityAuditAgent(name="Security Audit Agent", **kwargs)
+
+def _f_ci_cd(kwargs):
+    from agents.ci_cd_agent import CICDAgent
+    return CICDAgent(name="CI/CD Agent", **kwargs)
+
+def _f_observability(kwargs):
+    from agents.observability_agent import ObservabilityAgent
+    return ObservabilityAgent(name="Observability Agent", **kwargs)
+
+def _f_product_architect(kwargs):
+    from agents.product_architect_agent import ProductArchitectAgent
+    return ProductArchitectAgent(name="Product Architect Agent", **kwargs)
+
+def _f_ux_architect(kwargs):
+    from agents.ux_architecture_agent import UXArchitectureAgent
+    return UXArchitectureAgent(name="UX Architecture Agent", **kwargs)
+
+def _f_design_decisions(kwargs):
+    from agents.design_decisions_agent import DesignDecisionsAgent
+    return DesignDecisionsAgent(name="Design Decisions Agent", **kwargs)
+
+
+AGENT_FACTORIES = {
+    "planning_agent":     _f_planning_agent,
+    "builder":            _f_builder,
+    "ops":                _f_ops,
+    "meta":               _f_meta,
+    "research":           _f_research,
+    "python":             _f_python,
+    "typescript":         _f_typescript,
+    "content":            _f_content,
+    "memory":             _f_memory,
+    "analytics":          _f_analytics,
+    "monitoring":         _f_monitoring,
+    "media":              _f_media,
+    "backend_architect":  _f_backend_architect,
+    "database":           _f_database,
+    "api_builder":        _f_api_builder,
+    "auth_backend":       _f_auth_backend,
+    "infra":              _f_infra,
+    "security_audit":     _f_security_audit,
+    "ci_cd":              _f_ci_cd,
+    "observability":      _f_observability,
+    "product_architect":  _f_product_architect,
+    "ux_architect":        _f_ux_architect,
+    "design_decisions":   _f_design_decisions,
+}
+
 
 def make_agent(agent_type: str, spec: dict = None, provider: str = None):
     """Instantiate an agent by type. provider overrides DEFAULT_PROVIDER."""
-    from agents.planning_agent  import PlanningAgent
-    from agents.builder_agent   import BuilderAgent
-    from agents.ops_agent      import OpsAgent
-    from agents.meta_agent     import MetaAgent
-    from agents.longevity_research_agent         import LongevityResearchAgent
-    from agents.coding_experts.python_expert     import PythonExpertAgent
-    from agents.coding_experts.typescript_expert import TypeScriptExpertAgent
-    from agents.content_strategist               import ContentStrategistAgent
-    from agents.memory_agent                     import MemoryAgent
-    from agents.data_analytics_agent             import DataAnalyticsAgent
-    from agents.brand_mention_monitor            import BrandMentionMonitorAgent
-    from agents.media_agent                      import MediaAgent
-    from agents.backend_architect_agent          import BackendArchitectAgent
-    from agents.database_agent                   import DatabaseAgent
-    from agents.api_builder_agent                import APIBuilderAgent
-    from agents.auth_agent                       import AuthAgent
-    from agents.infra_agent                      import InfraAgent
-    from agents.security_audit_agent             import SecurityAuditAgent
-    from agents.ci_cd_agent                      import CICDAgent
-    from agents.observability_agent              import ObservabilityAgent
-    from agents.product_architect_agent          import ProductArchitectAgent
-    from agents.ux_architecture_agent            import UXArchitectureAgent
-    from agents.design_decisions_agent           import DesignDecisionsAgent
-
     kwargs = {"provider": provider} if provider else {}
-
-    factories = {
-        "planning_agent": lambda: PlanningAgent(name="Planning Agent", **kwargs),
-        "builder":    lambda: BuilderAgent(name="Builder Agent", **kwargs),
-        "ops":        lambda: OpsAgent(name="Ops Agent", **kwargs),
-        "meta":       lambda: MetaAgent(name="Meta Agent", **kwargs),
-        "research":   lambda: LongevityResearchAgent(**kwargs),
-        "python":     lambda: PythonExpertAgent(**kwargs),
-        "typescript": lambda: TypeScriptExpertAgent(**kwargs),
-        "content":    lambda: ContentStrategistAgent(**kwargs),
-        "memory":     lambda: MemoryAgent(**kwargs),
-        "analytics":  lambda: DataAnalyticsAgent(**kwargs),
-        "monitoring":        lambda: BrandMentionMonitorAgent(name="Brand Mention Monitor", **kwargs),
-        "media":             lambda: MediaAgent(**kwargs),
-        "backend_architect": lambda: BackendArchitectAgent(name="Backend Architect Agent", **kwargs),
-        "database":          lambda: DatabaseAgent(name="Database Agent", **kwargs),
-        "api_builder":       lambda: APIBuilderAgent(name="API Builder Agent", **kwargs),
-        "auth_backend":      lambda: AuthAgent(name="Auth Agent", **kwargs),
-        "infra":             lambda: InfraAgent(name="Infra Agent", **kwargs),
-        "security_audit":    lambda: SecurityAuditAgent(name="Security Audit Agent", **kwargs),
-        "ci_cd":             lambda: CICDAgent(name="CI/CD Agent", **kwargs),
-        "observability":     lambda: ObservabilityAgent(name="Observability Agent", **kwargs),
-        "product_architect": lambda: ProductArchitectAgent(name="Product Architect Agent", **kwargs),
-        "ux_architect":      lambda: UXArchitectureAgent(name="UX Architecture Agent", **kwargs),
-        "design_decisions":  lambda: DesignDecisionsAgent(name="Design Decisions Agent", **kwargs),
-    }
-    if agent_type not in factories:
-        raise ValueError(f"Unknown agent type: {agent_type}. Valid: {list(factories)}")
-    return factories[agent_type]()
+    if agent_type not in AGENT_FACTORIES:
+        raise ValueError(f"Unknown agent type: {agent_type}. Valid: {list(AGENT_FACTORIES)}")
+    return AGENT_FACTORIES[agent_type](kwargs)
 
 
 # ── Orchestrator ──────────────────────────────────────────────────────────────
@@ -288,7 +365,7 @@ class Orchestrator:
             for label, desc in self._ARCHETYPE_DESCRIPTIONS.items()
         )
         response = self.client.messages.create(
-            model      = "claude-haiku-4-5",
+            model      = "claude-haiku-4-5-20251001",
             max_tokens = 50,
             system     = (
                 "You are a task router for a multi-agent platform. "
@@ -427,11 +504,17 @@ class Orchestrator:
             result["routing_layer"]       = routing_layer
 
             if task_id:
-                self.queue.complete_task(task_id, {
-                    "output":     result["output"],
-                    "tool_calls": len(result["tool_calls"]),
-                    "iterations": result["iterations"],
-                })
+                self.queue.complete_task(
+                    task_id,
+                    {
+                        "output":             result["output"],
+                        "tool_calls":         len(result["tool_calls"]),
+                        "iterations":         result["iterations"],
+                        "execution_verified": result.get("execution_verified", False),
+                    },
+                    agent_type=agent_type,
+                    agent_id=getattr(agent, "agent_id", None),
+                )
 
             self.queue.log_mabp_outcome(
                 task_id            = task_id or "",
