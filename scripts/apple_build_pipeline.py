@@ -94,7 +94,18 @@ def _increment_run_counter() -> int:
     return count
 
 
-def run_pipeline(app_name: str, description: str, fix_only: bool = False) -> dict:
+def _load_design_context(design_dir: str) -> dict:
+    if not design_dir:
+        return None
+    dir_path = Path(design_dir.replace("~", str(Path.home())))
+    result = {}
+    for key, filename in [("prd", "prd.json"), ("ux_spec", "ux_spec.json"), ("design_spec", "design_spec.json")]:
+        file = dir_path / filename
+        result[key] = file.read_text(encoding="utf-8") if file.exists() else ""
+    return result
+
+
+def run_pipeline(app_name: str, description: str, fix_only: bool = False, design_dir: str = None) -> dict:
     print(f"\n{'='*60}")
     print(f"Apple Build Pipeline — {app_name}")
     print(f"{'='*60}\n")
@@ -107,13 +118,24 @@ def run_pipeline(app_name: str, description: str, fix_only: bool = False) -> dic
     _write_app_node(app_name, description)
     print(f"[AD4M] Context loaded: {len(ad4m_context)} chars\n")
 
+    design = _load_design_context(design_dir)
+    if design:
+        print(f"[Design] Loaded design context from: {design_dir}\n")
+
     if not fix_only:
         # ── Phase 1: Architecture ────────────────────────────────────────────
         print("[Phase 1] iOS Architect Agent → generating spec...")
         architect = iOSArchitectAgent(name="iOS Architect Agent")
+        design_ctx = ""
+        if design:
+            design_ctx = (
+                f"\n\nProduct Requirements (prd.json):\n{design['prd']}"
+                f"\n\nUX Architecture (ux_spec.json):\n{design['ux_spec']}"
+                f"\n\nDesign Decisions (design_spec.json):\n{design['design_spec']}"
+            )
         arch_result = architect.run(
             f"Design the complete SwiftUI architecture for: {description}"
-            f"{ad4m_context}"
+            f"{ad4m_context}{design_ctx}"
         )
         results["phases"]["architect"] = {
             "output":      arch_result["output"][:500],
@@ -201,9 +223,10 @@ def run_pipeline(app_name: str, description: str, fix_only: bool = False) -> dic
     # ── Phase 4: Design Review ───────────────────────────────────────────────
     print("[Phase 4] Design Review Agent → quality gate...")
     reviewer     = DesignReviewAgent(name="Design Review Agent")
+    design_brief = f"\n\nDesign brief (design_spec.json):\n{design['design_spec']}" if design else ""
     review_result = reviewer.run(
         f"Review all Swift files in the {app_name} project against the quality checklist. "
-        f"Return JSON with pass/fail and all violations."
+        f"Return JSON with pass/fail and all violations.{design_brief}"
     )
     results["phases"]["design_review"] = {
         "output":     review_result["output"][:600],
@@ -241,11 +264,13 @@ if __name__ == "__main__":
     parser.add_argument("--app",         type=str, required=True,  help="App name (must match ~/projects/[AppName]/ for fix-only)")
     parser.add_argument("--description", type=str, default="",     help="Plain-language app description")
     parser.add_argument("--fix-only",    action="store_true",       help="Skip architect+coder, just rebuild and fix")
+    parser.add_argument("--design-dir",  type=str, default=None,    help="Path to design/ directory with prd.json, ux_spec.json, design_spec.json")
     args = parser.parse_args()
 
     result = run_pipeline(
         app_name    = args.app,
         description = args.description,
         fix_only    = args.fix_only,
+        design_dir  = args.design_dir,
     )
     print(json.dumps(result, indent=2))

@@ -1,0 +1,46 @@
+{
+  "date": "2026-07-23",
+  "score": 89,
+  "passed": 8,
+  "total": 9,
+  "checks": {
+    "no_hardcoded_secrets": {
+      "pass": false,
+      "detail": "hardcoded secrets: agents/error_classifier.py:os.getenv(\"AD4M_ERROR_PERSPECTIVE\", \"a47bf0c3-5a86-4367-a462; scripts/crystallize_patterns.py:os.getenv(\"AD4M_ERROR_PERSPECTIVE\", \"a47bf0c3-5a86-4367-a462"
+    },
+    "wal_swarm": {
+      "pass": true,
+      "detail": "swarm.py WAL mode set"
+    },
+    "wal_base_agent": {
+      "pass": true,
+      "detail": "base_agent.py WAL mode set"
+    },
+    "wal_spar": {
+      "pass": true,
+      "detail": "spar.py WAL mode set"
+    },
+    "wal_mabp_report": {
+      "pass": true,
+      "detail": "mabp_report.py WAL mode set"
+    },
+    "api_auth": {
+      "pass": true,
+      "detail": "api_server bearer auth present"
+    },
+    "requirements_pinned": {
+      "pass": true,
+      "detail": "all deps pinned with =="
+    },
+    "ci_workflow": {
+      "pass": true,
+      "detail": "1 CI workflow(s) found"
+    },
+    "rate_limit_coverage": {
+      "pass": true,
+      "detail": "rate limiter applied to multiple endpoints"
+    }
+  },
+  "regressions": [],
+  "timestamp": "2026-07-23T19:07:10.459359+00:00"
+}

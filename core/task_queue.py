@@ -117,14 +117,33 @@ class TaskQueue:
         finally:
             conn.close()
 
-    def complete_task(self, task_id: str, output: dict) -> bool:
-        """Mark a task as done and store its output."""
+    def complete_task(
+        self,
+        task_id:    str,
+        output:     dict,
+        agent_type: str = None,
+        agent_id:   str = None,
+    ) -> bool:
+        """
+        Mark a task as done and store its output.
+        agent_type/agent_id, when provided, persist the *resolved* agent
+        (post auto-routing) back onto the task row — otherwise agent_type
+        stays whatever it was at push time (NULL for auto-routed tasks).
+        """
         conn = get_db()
         conn.execute("""
             UPDATE tasks
-            SET status = 'done', output = ?, ended_at = ?
+            SET status = 'done', output = ?, ended_at = ?,
+                agent_type = COALESCE(?, agent_type),
+                agent_id   = COALESCE(?, agent_id)
             WHERE id = ?
-        """, (json.dumps(output), datetime.now(timezone.utc).isoformat(), task_id))
+        """, (
+            json.dumps(output),
+            datetime.now(timezone.utc).isoformat(),
+            agent_type,
+            agent_id,
+            task_id,
+        ))
         conn.commit()
         conn.close()
         return True

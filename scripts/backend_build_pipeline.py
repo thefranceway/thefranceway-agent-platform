@@ -89,6 +89,17 @@ def _write_pipeline_status(app_name: str, status: str, critical_count: int) -> N
         pass
 
 
+def _load_design_context(design_dir: str) -> dict:
+    if not design_dir:
+        return None
+    dir_path = Path(design_dir.replace("~", str(Path.home())))
+    result = {}
+    for key, filename in [("prd", "prd.json"), ("ux_spec", "ux_spec.json"), ("design_spec", "design_spec.json")]:
+        file = dir_path / filename
+        result[key] = file.read_text(encoding="utf-8") if file.exists() else ""
+    return result
+
+
 def _extract_json(text: str) -> dict:
     """Extract first JSON object from agent output text."""
     match = re.search(r'\{.*\}', text, re.DOTALL)
@@ -100,7 +111,7 @@ def _extract_json(text: str) -> dict:
     return {}
 
 
-def run_pipeline(app_name: str, description: str, skip_architect: bool = False) -> dict:
+def run_pipeline(app_name: str, description: str, skip_architect: bool = False, design_dir: str = None) -> dict:
     print(f"\n{'='*60}")
     print(f"Backend Build Pipeline — {app_name}")
     print(f"{'='*60}\n")
@@ -114,15 +125,25 @@ def run_pipeline(app_name: str, description: str, skip_architect: bool = False) 
     _write_ad4m_node(app_name, description)
     print(f"[AD4M] Context loaded: {len(ad4m_context)} chars\n")
 
+    design = _load_design_context(design_dir)
+    if design:
+        print(f"[Design] Loaded design context from: {design_dir}\n")
+
     # ── Phase 1: Architecture ────────────────────────────────────────────────
     spec_json = ""
     if not skip_architect:
         print("[Phase 1] Backend Architect Agent → generating spec...")
         architect = BackendArchitectAgent(name="Backend Architect Agent")
+        design_ctx = ""
+        if design:
+            design_ctx = (
+                f"\n\nProduct Requirements (prd.json):\n{design['prd']}"
+                f"\n\nUX Architecture — screens and data entities (ux_spec.json):\n{design['ux_spec']}"
+            )
         arch_task = (
             f"Design the complete backend architecture for the {app_name} app.\n"
             f"Description: {description}{ad4m_context}\n\n"
-            f"Output directory for this project: {backend_dir}"
+            f"Output directory for this project: {backend_dir}{design_ctx}"
         )
         arch_result = architect.run(arch_task)
         results["phases"]["architect"] = {
@@ -147,10 +168,13 @@ def run_pipeline(app_name: str, description: str, skip_architect: bool = False) 
     # ── Phase 2a: Database ───────────────────────────────────────────────────
     print("[Phase 2a] Database Agent → writing migrations...")
     db_agent = DatabaseAgent(name="Database Agent")
+    data_entities_ctx = ""
+    if design and design['ux_spec']:
+        data_entities_ctx = f"\n\nData entities required by UX (from ux_spec.json):\n{design['ux_spec']}"
     db_result = db_agent.run(
         f"Write Supabase migration files for the {app_name} backend.\n"
         f"Architecture spec:\n{spec_json}\n\n"
-        f"Output directory: {backend_dir}"
+        f"Output directory: {backend_dir}{data_entities_ctx}"
     )
     results["phases"]["database"] = {
         "tool_calls": len(db_result["tool_calls"]),
@@ -290,11 +314,13 @@ if __name__ == "__main__":
     parser.add_argument("--app",            type=str, required=True,       help="App name")
     parser.add_argument("--description",    type=str, default="",          help="Plain-language app description")
     parser.add_argument("--skip-architect", action="store_true",           help="Skip architect, reuse spec from AD4M")
+    parser.add_argument("--design-dir",     type=str, default=None,        help="Path to design/ directory with prd.json, ux_spec.json, design_spec.json")
     args = parser.parse_args()
 
     result = run_pipeline(
         app_name       = args.app,
         description    = args.description,
         skip_architect = args.skip_architect,
+        design_dir     = args.design_dir,
     )
     print(json.dumps(result, indent=2))

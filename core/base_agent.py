@@ -124,6 +124,35 @@ _EXECUTION_KEYWORDS = frozenset([
     "benchmark", "test", "measure", "timing", "performance",
 ])
 
+# Tools whose execution has a real, verifiable side effect — persisting data,
+# running code, writing files, deploying, or posting externally — as opposed
+# to purely read-only tools (recall, read_file, web_fetch, list_dir, search_*,
+# fetch_*, get_*, list_*, query_*, check_imports, grep_pattern, etc.).
+# Sourced from the actual get_tools()/execute_tool() declarations across
+# agents/*.py and agents/coding_experts/*.py (plus the base tools every agent
+# gets from BaseAgent.get_tools()) rather than guessed — audit this list again
+# if a new side-effecting tool is added to an agent and it should count here.
+_EXECUTION_TOOL_NAMES = frozenset([
+    # Base tools available to every agent (core/base_agent.py)
+    "python_exec", "remember",
+    # Generic code/command execution
+    "run_python", "run_analysis", "bash_exec",
+    # Filesystem / artifact writes
+    "write_file", "write_chart_script", "write_mention_log",
+    # Deploys
+    "cloudflare_deploy", "wrangler_deploy", "redeploy_pages", "xcodebuild",
+    # Persistent memory / registry writes
+    "store_fact", "store_watch_alert", "store_reflection", "store_weekly_summary",
+    "record_fix", "record_fix_outcome", "register_agent", "generate_agent_file",
+    "consolidate_episodes", "ingest_url", "ingest_text",
+    # External posting / notification
+    "post_to_moltbook", "send_grow_session", "send_work_review",
+    # Media processing (produces real transcripts/analysis, not just claims)
+    "transcribe_video", "analyze_video",
+    # AD4M perspective/link writes (agents/ad4m_tools.py)
+    "ad4m_write_link", "ad4m_create_perspective",
+])
+
 
 def _classify_task_type(task: str) -> str:
     tokens = set(re.findall(r"[a-z]+", task.lower()))
@@ -1397,9 +1426,8 @@ class BaseAgent:
         task_type  = _classify_task_type(task)
 
         # Tool enforcement — flag unverified execution claims
-        execution_tool_names = {"python_exec"}
-        called_tools         = {tc["tool"] for tc in tool_calls}
-        execution_verified   = bool(called_tools & execution_tool_names)
+        called_tools       = {tc["tool"] for tc in tool_calls}
+        execution_verified = bool(called_tools & _EXECUTION_TOOL_NAMES)
 
         if task_type == "execution" and not execution_verified:
             output = f"[UNVERIFIED REASONING — no execution tool called]\n{output}"

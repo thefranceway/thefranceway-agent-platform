@@ -25,7 +25,7 @@ DB_PATH      = PLATFORM_DIR / "registry" / "agent_platform.db"
 
 PRICING = {
     "claude-sonnet-4-6":         {"in": 3.00,   "out": 15.00},
-    "claude-haiku-4-5-20251001": {"in": 0.80,   "out": 4.00},
+    "claude-haiku-4-5-20251001": {"in": 0.25,   "out": 1.25},
     "claude-opus-4-6":           {"in": 15.00,  "out": 75.00},
     "claude-opus-4-7":           {"in": 15.00,  "out": 75.00},
     "gemini-2.0-flash":          {"in": 0.075,  "out": 0.30},

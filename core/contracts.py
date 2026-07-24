@@ -100,18 +100,21 @@ def validate_input(
     try:
         schema_cls.model_validate(data)
     except ValidationError as exc:
+        first: Optional[tuple] = None
         for err in exc.errors():
             field    = ".".join(str(loc) for loc in err["loc"]) or "root"
             expected = err.get("type", "unknown")
             got      = str(err.get("input", ""))[:120]
             _log_violation(agent_name, "input", field, expected, got, "hard")
-            raise ContractViolationError(
-                agent     = agent_name,
-                field     = field,
-                expected  = expected,
-                got       = got,
-                direction = "input",
-            ) from exc
+            if first is None:
+                first = (field, expected, got)
+        raise ContractViolationError(
+            agent     = agent_name,
+            field     = first[0],
+            expected  = first[1],
+            got       = first[2],
+            direction = "input",
+        ) from exc
 
 
 def validate_output(
@@ -128,15 +131,18 @@ def validate_output(
     try:
         schema_cls.model_validate(data)
     except ValidationError as exc:
+        first: Optional[tuple] = None
         for err in exc.errors():
             field    = ".".join(str(loc) for loc in err["loc"]) or "root"
             expected = err.get("type", "unknown")
             got      = str(err.get("input", ""))[:120]
             _log_violation(agent_name, "output", field, expected, got, "hard")
-            raise ContractViolationError(
-                agent     = agent_name,
-                field     = field,
-                expected  = expected,
-                got       = got,
-                direction = "output",
-            ) from exc
+            if first is None:
+                first = (field, expected, got)
+        raise ContractViolationError(
+            agent     = agent_name,
+            field     = first[0],
+            expected  = first[1],
+            got       = first[2],
+            direction = "output",
+        ) from exc
