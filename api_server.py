@@ -425,6 +425,18 @@ async def clear_failed_tasks(_auth: None = Depends(_require_api_key)):
     return {"cleared": count, "status": "ok"}
 
 
+@app.get("/tasks")
+async def list_tasks(
+    status:     Optional[str] = None,
+    agent_type: Optional[str] = None,
+    limit:      int           = 50,
+    _auth:      None          = Depends(_require_api_key),
+):
+    from core.task_queue import get_queue
+    tasks = get_queue().list_tasks(status=status, agent_type=agent_type, limit=min(limit, 100))
+    return {"tasks": tasks, "count": len(tasks)}
+
+
 @app.get("/task/{task_id}")
 async def get_task(task_id: str, _auth: None = Depends(_require_api_key)):
     from core.task_queue import get_queue
