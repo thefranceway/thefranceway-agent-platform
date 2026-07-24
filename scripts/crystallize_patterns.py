@@ -26,7 +26,7 @@ import anthropic
 
 PLATFORM_DIR     = Path(__file__).parent.parent
 VIOLATIONS_LOG   = PLATFORM_DIR / "logs" / "contract_violations.jsonl"
-PERSPECTIVE_UUID = os.getenv("AD4M_ERROR_PERSPECTIVE", "a47bf0c3-5a86-4367-a462-f88680491525")
+PERSPECTIVE_UUID = os.getenv("AD4M_ERROR_PERSPECTIVE") or "a47bf0c3-5a86-4367-a462-f88680491525"
 MAX_RECORDS      = 500
 MIN_GROUP_SIZE   = 3   # minimum errors to propose a pattern for
 

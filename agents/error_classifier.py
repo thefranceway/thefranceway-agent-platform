@@ -105,7 +105,7 @@ def load_supplemental_patterns() -> list[tuple]:
         from agents.ad4m_tools import execute_ad4m_tool
         import os
 
-        PERSPECTIVE_UUID = os.getenv("AD4M_ERROR_PERSPECTIVE", "a47bf0c3-5a86-4367-a462-f88680491525")
+        PERSPECTIVE_UUID = os.getenv("AD4M_ERROR_PERSPECTIVE") or "a47bf0c3-5a86-4367-a462-f88680491525"
         supplemental = []
 
         for category in _KNOWN_CATEGORIES:
