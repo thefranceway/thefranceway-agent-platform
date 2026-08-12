@@ -28,7 +28,7 @@ AGENTS_JSON  = PLATFORM_DIR / "registry" / "agents.json"
 class MemoryAgent(BaseAgent):
 
     AGENT_TYPE         = "meta"
-    DEFAULT_BEHAVIORAL = "Agent"
+    DEFAULT_BEHAVIORAL = "Resident"
 
     def __init__(self, **kwargs):
         super().__init__(name="Memory Agent", knowledge_base="kb_memory_agent", **kwargs)

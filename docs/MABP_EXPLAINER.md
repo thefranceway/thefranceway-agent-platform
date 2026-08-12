@@ -23,7 +23,7 @@ Instead of routing tasks by keyword matching alone, MABP routes by **behavioral 
 Every task submitted to the API passes through three routing layers in order:
 
 **Layer 1 — Keyword routing** (confidence: 0.97)
-Domain-specific signals that deterministically map to an agent. If your task mentions "Solana", "wallet", or "token", it routes to the Solana Expert immediately.
+Domain-specific signals that deterministically map to an agent. If your task mentions "python", "fastapi", or "pandas", it routes to the Python Expert immediately.
 
 **Layer 2 — Behavioral routing** (confidence: 0.85)
 When keywords are ambiguous, the task's *character* is matched to an archetype. A task that "synthesizes" and "explores" matches the Philosopher (research agent). A task that "builds" and "implements" matches the Architect (builder/coding agents).

@@ -291,6 +291,11 @@ class ShadowMonitor:
 
         return None
 
+    def has_alert_codes(self) -> list[str]:
+        """Return list of alert-worthy shadow codes (S4, S6) seen in this run."""
+        alert_codes = {"S4", "S6"}
+        return [e.shadow_code for e in self._events if e.shadow_code in alert_codes]
+
     def summary(self) -> dict:
         """Return shadow monitoring summary to include in run record."""
         return {

@@ -31,6 +31,12 @@ from datetime import datetime, timezone
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# Single source of truth for valid agent_type routing keys — see
+# core/orchestrator.py's AGENT_FACTORIES. Built dynamically here so this
+# enum can never drift out of sync with the real factory keys again.
+from core.orchestrator import AGENT_FACTORIES
+AGENT_TYPE_KEYS = sorted(AGENT_FACTORIES.keys())
+
 
 def send(obj):
     sys.stdout.write(json.dumps(obj) + "\n")
@@ -66,8 +72,11 @@ TOOLS = [
                 },
                 "agent_type": {
                     "type":        "string",
-                    "description": "Optional — omit for auto-routing. Force a specific agent: builder | ops | meta | python | typescript | solana",
-                    "enum":        ["builder", "ops", "meta", "python", "typescript", "solana"]
+                    "description": (
+                        "Optional — omit for auto-routing. Force a specific agent: "
+                        + " | ".join(AGENT_TYPE_KEYS)
+                    ),
+                    "enum":        AGENT_TYPE_KEYS
                 },
                 "async_mode": {
                     "type":        "boolean",
@@ -145,6 +154,17 @@ TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {},
+        },
+    },
+    {
+        "name":        "delete_agent",
+        "description": "Permanently remove an agent from the registry (DB + agents.json). Pass agent_id or name.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string", "description": "Agent id to delete"},
+                "name":     {"type": "string", "description": "Agent name to delete (used if agent_id omitted)"},
+            },
         },
     },
     {
@@ -330,24 +350,23 @@ def handle(req: dict) -> dict:
                         "note":       "Use get_task_status to check progress",
                     }))
 
-                # Synchronous: run now
+                # Synchronous: run now. Dispatch directly by task_id — do not call
+                # claim_task() here, since it claims globally by priority/age
+                # rather than the specific task just pushed, which could steal
+                # (and orphan) an unrelated pending task under concurrent load.
+                # api_server.py's _run_task already uses this safe pattern.
                 from core.orchestrator import Orchestrator
                 orch   = Orchestrator()
-                claimed = queue.claim_task()
-
-                if claimed and claimed["id"] == task_id:
-                    result = orch.dispatch(description, agent_type=agent_type, task_id=task_id)
-                else:
-                    # Queue race (shouldn't happen in single-user mode)
-                    result = orch.dispatch(description, agent_type=agent_type)
+                result = orch.dispatch(description, agent_type=agent_type, task_id=task_id)
 
                 output = {
-                    "task_id":    task_id,
-                    "agent_type": result.get("agent_type", agent_type or "auto-routed"),
-                    "output":     result.get("output", ""),
-                    "tool_calls": len(result.get("tool_calls", [])),
-                    "iterations": result.get("iterations", 0),
-                    "error":      result.get("error"),
+                    "task_id":            task_id,
+                    "agent_type":         result.get("agent_type", agent_type or "auto-routed"),
+                    "output":             result.get("output", ""),
+                    "tool_calls":         len(result.get("tool_calls", [])),
+                    "iterations":         result.get("iterations", 0),
+                    "execution_verified": result.get("execution_verified", False),
+                    "error":              result.get("error"),
                 }
                 return text_result(rid, json.dumps(output, indent=2))
 
@@ -414,15 +433,21 @@ def handle(req: dict) -> dict:
                 task = get_queue().get_task(task_id)
                 if not task:
                     return text_result(rid, json.dumps({"error": "Task not found", "task_id": task_id}))
+                task_output = task.get("output")
+                execution_verified = (
+                    task_output.get("execution_verified")
+                    if isinstance(task_output, dict) else None
+                )
                 return text_result(rid, json.dumps({
-                    "task_id":    task["id"],
-                    "status":     task["status"],
-                    "agent_type": task.get("agent_type"),
-                    "description": task["description"][:100],
-                    "created_at": task.get("created_at"),
-                    "started_at": task.get("started_at"),
-                    "ended_at":   task.get("ended_at"),
-                    "error":      task.get("error"),
+                    "task_id":            task["id"],
+                    "status":             task["status"],
+                    "agent_type":         task.get("agent_type"),
+                    "description":        task["description"][:100],
+                    "created_at":         task.get("created_at"),
+                    "started_at":         task.get("started_at"),
+                    "ended_at":           task.get("ended_at"),
+                    "execution_verified": execution_verified,
+                    "error":              task.get("error"),
                 }, indent=2))
             except Exception as e:
                 return error_response(rid, -32603, str(e))
@@ -440,12 +465,13 @@ def handle(req: dict) -> dict:
                     return text_result(rid, json.dumps({"error": "Task not found"}))
                 output = task.get("output") or {}
                 return text_result(rid, json.dumps({
-                    "task_id":    task["id"],
-                    "status":     task["status"],
-                    "output":     output.get("output", "") if isinstance(output, dict) else str(output),
-                    "tool_calls": output.get("tool_calls") if isinstance(output, dict) else None,
-                    "error":      task.get("error"),
-                    "ended_at":   task.get("ended_at"),
+                    "task_id":            task["id"],
+                    "status":             task["status"],
+                    "output":             output.get("output", "") if isinstance(output, dict) else str(output),
+                    "tool_calls":         output.get("tool_calls") if isinstance(output, dict) else None,
+                    "execution_verified": output.get("execution_verified") if isinstance(output, dict) else None,
+                    "error":              task.get("error"),
+                    "ended_at":           task.get("ended_at"),
                 }, indent=2))
             except Exception as e:
                 return error_response(rid, -32603, str(e))
@@ -465,10 +491,11 @@ def handle(req: dict) -> dict:
                     "queue":       queue.queue_stats(),
                     "recent_tasks": [
                         {
-                            "id":     t["id"][:8],
-                            "desc":   t["description"][:60],
-                            "status": t["status"],
-                            "agent":  t.get("agent_type"),
+                            "id":       t["id"],
+                            "short_id": t["id"][:8],
+                            "desc":     t["description"][:60],
+                            "status":   t["status"],
+                            "agent":    t.get("agent_type"),
                         }
                         for t in recent
                     ],
@@ -485,6 +512,18 @@ def handle(req: dict) -> dict:
                 from core.task_queue import get_queue
                 count = get_queue().clear_failed_tasks()
                 return text_result(rid, json.dumps({"cleared": count, "status": "ok"}, indent=2))
+            except Exception as e:
+                return error_response(rid, -32603, str(e))
+
+        # ── delete_agent ───────────────────────────────────────────────────
+
+        if tool == "delete_agent":
+            try:
+                agent_id = args.get("agent_id")
+                name     = args.get("name")
+                from core.agent_registry import get_registry
+                deleted = get_registry().delete_agent(agent_id=agent_id, name=name)
+                return text_result(rid, json.dumps({"deleted": deleted, "status": "ok"}, indent=2))
             except Exception as e:
                 return error_response(rid, -32603, str(e))
 

@@ -2,15 +2,15 @@ name = "agent-dispatcher"
 main = "src/index.ts"
 compatibility_date = "2024-01-01"
 
-[[d1_databases]]
-binding = "DB"
-database_name = "agent_platform_db"
-database_id = "2254bd61-3e66-454e-b8ee-5562ac3980e2"
-
 [vars]
 PLATFORM_VERSION = "1.0.0"
 PLATFORM_AUTHOR = "thefranceway"
+BACKEND_URL = "https://api.thefranceway.com"
 
-# Uncomment and set after creating the D1 database:
-# wrangler d1 create agent_platform_db
-# wrangler d1 execute agent_platform_db --file=../../registry/schema.sql
+# PLATFORM_API_KEY is a secret, not a var — set it with:
+#   wrangler secret put PLATFORM_API_KEY
+# Must match the PLATFORM_API_KEY env var on the Python server.
+#
+# No D1 binding anymore — this Worker proxies to api_server.py's SQLite-backed
+# queue (core/task_queue.py) instead of maintaining a second, disconnected
+# task store. See workers/dispatcher/src/index.ts for why.

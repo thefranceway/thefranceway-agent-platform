@@ -4,8 +4,13 @@ Error Classifier — Shared Module
 Parses raw xcodebuild output into a structured list of classified errors.
 Used by both the Build Agent (reporting) and Error Fix Agent (input).
 Not an agent — a pure utility module with no LLM calls.
+
+Extensibility: supplemental patterns can be loaded from AD4M at runtime via
+load_supplemental_patterns(). These are appended after the hardcoded patterns
+and give the crystallize_patterns cron a way to teach the classifier new error types.
 """
 
+import json
 import re
 from dataclasses import dataclass, asdict
 from typing import Literal
@@ -75,6 +80,11 @@ _PATTERNS = [
     ),
 ]
 
+_KNOWN_CATEGORIES = [
+    "compile_error", "linker_error", "missing_symbol",
+    "missing_module", "deprecation", "warning", "swiftui_preview_error",
+]
+
 _COMPILE_RE = re.compile(r"^(.+\.swift):(\d+):(\d+): error: (.+)$")
 _WARNING_RE = re.compile(r"^(.+\.swift):(\d+):(\d+): warning: (.+)$")
 _LINKER_RE  = re.compile(r"(ld: |Undefined symbols|clang: error: linker)")
@@ -82,10 +92,56 @@ _MODULE_RE  = re.compile(r"error: no such module '([^']+)'")
 _SYMBOL_RE  = re.compile(r"error: use of unresolved identifier '([^']+)'")
 
 
-def classify(xcodebuild_log: str) -> list[ClassifiedError]:
-    """Parse xcodebuild stdout and return classified error list."""
+def load_supplemental_patterns() -> list[tuple]:
+    """
+    Load additional error patterns from AD4M (stored by crystallize_patterns.py).
+    Returns a list of (category, compiled_regex) tuples, same format as _PATTERNS.
+    Silently returns [] if AD4M is unavailable or no patterns have been stored.
+    """
+    try:
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+        from agents.ad4m_tools import execute_ad4m_tool
+        import os
+
+        PERSPECTIVE_UUID = os.getenv("AD4M_ERROR_PERSPECTIVE") or "a47bf0c3-5a86-4367-a462-f88680491525"
+        supplemental = []
+
+        for category in _KNOWN_CATEGORIES:
+            raw = execute_ad4m_tool("ad4m_read_links", {
+                "perspective_uuid": PERSPECTIVE_UUID,
+                "source":    f"build://error-patterns/{category}",
+                "predicate": "franc://regex-pattern",
+            })
+            links = json.loads(raw) if isinstance(raw, str) else raw
+            if not isinstance(links, list):
+                continue
+            for link in links:
+                target = link.get("target", "")
+                if target.startswith("literal://"):
+                    pattern_str = target[len("literal://"):]
+                    try:
+                        supplemental.append((category, re.compile(pattern_str)))
+                    except re.error:
+                        pass
+        return supplemental
+    except Exception:
+        return []
+
+
+def classify(
+    xcodebuild_log: str,
+    supplemental_patterns: list[tuple] = None,
+) -> list[ClassifiedError]:
+    """
+    Parse xcodebuild stdout and return classified error list.
+    supplemental_patterns: optional list of (category, compiled_regex) from load_supplemental_patterns().
+    If None, supplementals are not loaded (caller decides when to pay the AD4M round-trip).
+    """
     errors: list[ClassifiedError] = []
     lines  = xcodebuild_log.splitlines()
+    extra  = supplemental_patterns or []
 
     for i, line in enumerate(lines):
         context = lines[max(0, i-1): i+3]
@@ -141,6 +197,20 @@ def classify(xcodebuild_log: str) -> list[ClassifiedError]:
                 context_lines=context,
             ))
             continue
+
+        # Supplemental patterns (from AD4M / crystallize_patterns) — checked last
+        for sup_category, sup_regex in extra:
+            if sup_regex.search(line):
+                errors.append(ClassifiedError(
+                    category=sup_category,
+                    file_path="",
+                    line=0,
+                    column=0,
+                    error_code="supplemental",
+                    message=line.strip(),
+                    context_lines=context,
+                ))
+                break
 
     # Deduplicate by (file_path, line, message)
     seen   = set()

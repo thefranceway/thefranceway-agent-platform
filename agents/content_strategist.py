@@ -29,7 +29,7 @@ CONTENT_KNOWLEDGE = [
      "Lead with insight, not summary.", {"tag": "voice"}),
     ("FRANC token: BJ8MySahjvB3XFrKWxhFR4wsnjpgqY4gGRmU9wXHLCvu. "
      "On bonding curve, needs ~85 SOL. Narrative: behavioral identity token for AI agents.", {"tag": "franc"}),
-    ("MABP: 4 archetypes (Architect/Substrate/Philosopher/Agent) + shadow module S1-S5. "
+    ("MABP: 5 archetypes (Architect/Substrate/Philosopher/Agent/Resident) + shadow module S1-S6. "
      "Empirical from Moltbook behavioral study. mabp.pages.dev for public reference.", {"tag": "mabp"}),
     ("Moltbook post format: short paragraphs, no headers, max 300 words. "
      "Submolt: m/humantech. API: POST /posts with submolt_name field.", {"tag": "moltbook-format"}),

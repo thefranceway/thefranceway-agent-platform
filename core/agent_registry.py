@@ -61,7 +61,9 @@ def init_db():
             created_by         TEXT DEFAULT 'user',
             created_at         TEXT,
             enabled            INTEGER DEFAULT 1,
-            metadata           TEXT           -- JSON object
+            metadata           TEXT,          -- JSON object
+            version            TEXT DEFAULT '1.0.0',
+            version_history    TEXT DEFAULT '[]'  -- JSON array of prior spec snapshots
         );
 
         CREATE TABLE IF NOT EXISTS tasks (
@@ -138,8 +140,32 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_rate_limits_key_ts
             ON rate_limits(api_key, ts);
+
+        CREATE TABLE IF NOT EXISTS cost_ledger (
+            id                 TEXT PRIMARY KEY,
+            timestamp          TEXT NOT NULL,
+            agent_id           TEXT,
+            agent_name         TEXT,
+            model              TEXT,
+            input_tokens       INTEGER DEFAULT 0,
+            output_tokens      INTEGER DEFAULT 0,
+            estimated_cost_usd REAL    DEFAULT 0.0
+        );
+        CREATE INDEX IF NOT EXISTS idx_cost_ledger_agent
+            ON cost_ledger(agent_name);
+        CREATE INDEX IF NOT EXISTS idx_cost_ledger_ts
+            ON cost_ledger(timestamp);
     """)
     conn.commit()
+
+    # Migrate existing agents table — add versioning columns if absent
+    for col, default in [("version", "'1.0.0'"), ("version_history", "'[]'")]:
+        try:
+            conn.execute(f"ALTER TABLE agents ADD COLUMN {col} TEXT DEFAULT {default}")
+            conn.commit()
+        except Exception:
+            pass  # column already exists
+
     conn.close()
 
 
@@ -169,8 +195,9 @@ class AgentRegistry:
             conn.execute("""
                 INSERT OR REPLACE INTO agents
                 (id, name, type, model, system_prompt, tools, knowledge_base,
-                 behavioral_profile, created_by, created_at, enabled, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 behavioral_profile, created_by, created_at, enabled, metadata,
+                 version, version_history)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 agent["id"],
                 agent["name"],
@@ -184,6 +211,8 @@ class AgentRegistry:
                 agent.get("created_at", datetime.now(timezone.utc).date().isoformat()),
                 1 if agent.get("enabled", True) else 0,
                 json.dumps(agent.get("metadata", {})),
+                agent.get("version", "1.0.0"),
+                json.dumps(agent.get("version_history", [])),
             ))
         conn.commit()
         conn.close()
@@ -251,8 +280,9 @@ class AgentRegistry:
         conn.execute("""
             INSERT OR REPLACE INTO agents
             (id, name, type, model, system_prompt, tools, knowledge_base,
-             behavioral_profile, created_by, created_at, enabled, metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             behavioral_profile, created_by, created_at, enabled, metadata,
+             version, version_history)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             spec["id"],
             spec["name"],
@@ -266,6 +296,8 @@ class AgentRegistry:
             spec["created_at"],
             1 if spec.get("enabled", True) else 0,
             json.dumps(spec.get("metadata", {})),
+            spec.get("version", "1.0.0"),
+            json.dumps(spec.get("version_history", [])),
         ))
         conn.commit()
         conn.close()
@@ -284,6 +316,36 @@ class AgentRegistry:
         self._save_json(agents)
         return True
 
+    def delete_agent(self, agent_id: str = None, name: str = None) -> bool:
+        """
+        Permanently remove an agent from both the SQLite DB and agents.json.
+        Unlike disable_agent() (soft — sets enabled=0), this actually deletes
+        the row/entry. Pass either agent_id or name. Returns True if a row was
+        found and deleted, False if no match existed.
+        """
+        if not agent_id and not name:
+            raise ValueError("delete_agent requires agent_id or name")
+
+        if not agent_id and name:
+            existing = self.get_agent_by_name(name)
+            if not existing:
+                return False
+            agent_id = existing["id"]
+
+        conn = get_db()
+        cur = conn.execute("DELETE FROM agents WHERE id = ?", (agent_id,))
+        conn.commit()
+        deleted_from_db = cur.rowcount > 0
+        conn.close()
+
+        agents = self._load_json()
+        remaining = [a for a in agents if a["id"] != agent_id]
+        deleted_from_json = len(remaining) < len(agents)
+        if deleted_from_json:
+            self._save_json(remaining)
+
+        return deleted_from_db or deleted_from_json
+
     def _load_json(self) -> list:
         if REGISTRY_PATH.exists():
             return json.loads(REGISTRY_PATH.read_text())
@@ -293,14 +355,96 @@ class AgentRegistry:
         if row is None:
             return None
         d = dict(row)
-        for field in ("tools", "metadata"):
+        for field in ("tools", "metadata", "version_history"):
             if d.get(field):
                 try:
                     d[field] = json.loads(d[field])
                 except Exception:
                     pass
+        d.setdefault("version", "1.0.0")
+        d.setdefault("version_history", [])
         d["enabled"] = bool(d.get("enabled", 1))
         return d
+
+    # ── Versioning ─────────────────────────────────────────────────────────
+
+    def bump_version(self, agent_id: str) -> str:
+        """
+        Snapshot current spec into version_history (max 5), increment patch version.
+        Returns the new version string.
+        """
+        agent = self.get_agent(agent_id)
+        if not agent:
+            raise ValueError(f"Agent {agent_id} not found")
+
+        current_version = agent.get("version", "1.0.0")
+        history: list   = agent.get("version_history", []) or []
+
+        # Compute new version first
+        parts = current_version.split(".")
+        try:
+            parts[2] = str(int(parts[2]) + 1)
+        except (IndexError, ValueError):
+            parts = ["1", "0", "1"]
+        new_version = ".".join(parts)
+
+        # Snapshot current spec tagged with the version it was before bumping
+        snapshot = {k: v for k, v in agent.items() if k != "version_history"}
+        snapshot["version"] = current_version
+        history.append(snapshot)
+        if len(history) > 5:
+            history = history[-5:]
+
+        conn = get_db()
+        conn.execute(
+            "UPDATE agents SET version = ?, version_history = ? WHERE id = ?",
+            (new_version, json.dumps(history), agent_id),
+        )
+        conn.commit()
+        conn.close()
+
+        # Mirror to JSON
+        agents = self._load_json()
+        for a in agents:
+            if a["id"] == agent_id:
+                a["version"]         = new_version
+                a["version_history"] = history
+        self._save_json(agents)
+
+        return new_version
+
+    def rollback_agent(self, agent_id: str, version: str) -> bool:
+        """
+        Restore a prior spec from version_history matching the given version string.
+        Returns True on success, False if version not found.
+        """
+        agent = self.get_agent(agent_id)
+        if not agent:
+            raise ValueError(f"Agent {agent_id} not found")
+
+        history: list = agent.get("version_history", []) or []
+        target = next((s for s in history if s.get("version") == version), None)
+        if target is None:
+            return False
+
+        # Restore spec fields (register_agent will set a clean baseline)
+        restored = {k: v for k, v in target.items() if k != "version_history"}
+        self.register_agent(restored)
+
+        # Re-attach version_history after register so it survives
+        conn = get_db()
+        conn.execute(
+            "UPDATE agents SET version_history = ? WHERE id = ?",
+            (json.dumps(history), agent_id),
+        )
+        conn.commit()
+        conn.close()
+        agents = self._load_json()
+        for a in agents:
+            if a["id"] == agent_id:
+                a["version_history"] = history
+        self._save_json(agents)
+        return True
 
     def summary(self) -> dict:
         conn   = get_db()

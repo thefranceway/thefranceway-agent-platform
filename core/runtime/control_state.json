@@ -1,6 +1,6 @@
 {
   "swarm_size": 4,
-  "spar_weight": 1.0,
-  "context_strictness": 0.5,
+  "spar_weight": 1.3000000000000003,
+  "context_strictness": 0.7999999999999999,
   "skill_loader_strength": 0.7
 }

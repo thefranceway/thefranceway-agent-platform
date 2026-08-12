@@ -65,7 +65,6 @@ def get_kb_name(run: dict) -> str:
         "Memory Agent":             "kb_memory_agent",
         "Data Analytics Agent":     "kb_data_analytics",
         "Meta Agent":               "kb_meta",
-        "Solana Expert":            "kb_solana",
         "TypeScript Expert":        "kb_typescript",
         "Python Expert":            "kb_python",
         "Life Coach Agent":         "kb_coaching",

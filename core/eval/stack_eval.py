@@ -143,6 +143,78 @@ def check_rate_limit_on_task() -> tuple[bool, str]:
     return ok, "rate limiter applied to multiple endpoints" if ok else "rate limiter only on /route"
 
 
+def check_registry_matches_factories() -> tuple[bool, str]:
+    """
+    registry/agents.json (what list_agents()/platform_status() report) and
+    core.orchestrator.AGENT_FACTORIES (what dispatch_task can actually route
+    to) drifted apart three separate times in one session before this check
+    existed: 13 real agent types missing from the registry, 7 test-agent
+    entries with no factory behind them, and a phantom "solana" type with
+    neither. This makes that class of drift fail CI instead of requiring a
+    manual audit to catch it again.
+    """
+    sys.path.insert(0, str(ROOT))
+    from core.orchestrator import AGENT_FACTORIES
+
+    agents_json_path = ROOT / "registry" / "agents.json"
+    try:
+        agents = json.loads(agents_json_path.read_text())
+    except FileNotFoundError:
+        return False, "registry/agents.json not found"
+
+    registry_types = {a["type"] for a in agents}
+    factory_types  = set(AGENT_FACTORIES.keys())
+
+    # Registry `type` is a display/taxonomy label, not always the literal
+    # AGENT_FACTORIES dispatch key — some agents are legitimately routed
+    # through dispatch_task(agent_type=...) under one name (factory_types),
+    # others are legitimately only ever instantiated directly inside a
+    # specific pipeline script and never dispatched generically at all
+    # (registry-only, by design, not drift). Two known cases:
+    #  - "challenger"/"pragmatist": inline SPARDebater roles, core/spar.py
+    #    instantiates them directly.
+    #  - "build_agent"/"coasys_watcher"/"design_review"/"error_fix"/
+    #    "ios_architect"/"swift_coder": instantiated directly inside
+    #    scripts/apple_build_pipeline.py or services/coasys_watch_scheduler.py,
+    #    never through the generic orchestrator dispatch path.
+    KNOWN_NON_FACTORY_TYPES = {
+        "challenger", "pragmatist",
+        "build_agent", "coasys_watcher", "design_review", "error_fix",
+        "ios_architect", "swift_coder",
+    }
+    # Older registry entries also use this looser taxonomy instead of the
+    # literal factory key for otherwise-real, dispatch_task-routable agents
+    # (e.g. Python Expert's type is "coding_expert", not "python"). Newer
+    # entries (added when the 13-agent registry gap was fixed) set `type`
+    # to the literal factory key directly — that's the convention going
+    # forward, so only alias the pre-existing exceptions rather than
+    # broadening the taxonomy further.
+    KNOWN_TYPE_ALIASES = {
+        "coding_expert": {"python", "typescript"},
+        "research":      {"content"},   # Content Strategist
+        "meta":          {"memory"},    # Memory Agent
+        "builder":       {"analytics"}, # Data Analytics Agent
+    }
+
+    registry_only = registry_types - factory_types - KNOWN_NON_FACTORY_TYPES
+    for reg_type, aliased_factories in KNOWN_TYPE_ALIASES.items():
+        if reg_type in registry_only and aliased_factories & factory_types:
+            registry_only.discard(reg_type)
+
+    factory_only = factory_types - registry_types
+    for aliased_factories in KNOWN_TYPE_ALIASES.values():
+        factory_only -= aliased_factories
+
+    if registry_only or factory_only:
+        parts = []
+        if factory_only:
+            parts.append(f"factory keys with no registry entry: {sorted(factory_only)}")
+        if registry_only:
+            parts.append(f"registry types with no factory (and no known alias): {sorted(registry_only)}")
+        return False, "; ".join(parts)
+    return True, f"{len(factory_types)} factory keys, all represented in the registry"
+
+
 # ── Runner ────────────────────────────────────────────────────────────────────
 
 CHECKS = [
@@ -155,6 +227,7 @@ CHECKS = [
     ("requirements_pinned",   check_requirements_pinned),
     ("ci_workflow",           check_ci_workflow),
     ("rate_limit_coverage",   check_rate_limit_on_task),
+    ("registry_sync",         check_registry_matches_factories),
 ]
 
 

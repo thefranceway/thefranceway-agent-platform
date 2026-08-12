@@ -25,6 +25,19 @@ from typing import Optional
 import anthropic
 
 try:
+    from core.contracts     import validate_input, validate_output, ContractViolationError
+    from core.agent_schemas import get_schema, get_tool_input_schema
+except (ImportError, ModuleNotFoundError):
+    try:
+        from contracts     import validate_input, validate_output, ContractViolationError
+        from agent_schemas import get_schema, get_tool_input_schema
+    except (ImportError, ModuleNotFoundError):
+        def validate_input(*a, **kw): pass   # type: ignore
+        def validate_output(*a, **kw): pass  # type: ignore
+        def get_schema(*a): return None       # type: ignore
+        def get_tool_input_schema(*a): return None  # type: ignore
+
+try:
     from core.runtime.loader import get_param as _get_param
 except Exception:
     def _get_param(key, default=None): return default
@@ -57,10 +70,87 @@ _RUNS_LOCK      = threading.Lock()
 _SKILLS_DIR     = Path.home() / ".metaclaw" / "skills"
 
 
+_SHADOW_ALERTS_LOG  = PLATFORM_DIR / "logs" / "shadow_alerts.jsonl"
+_SHADOW_ALERTS_LOCK = threading.Lock()
+
+
+def _check_shadow_alerts(monitor, agent_name: str, run_id: str) -> None:
+    """Write shadow_alerts.jsonl entry and optionally POST to Telegram for S4/S6 events."""
+    if monitor is None:
+        return
+    alert_codes = monitor.has_alert_codes()
+    if not alert_codes:
+        return
+
+    record = {
+        "timestamp":   datetime.now(timezone.utc).isoformat(),
+        "run_id":      run_id,
+        "agent":       agent_name,
+        "alert_codes": alert_codes,
+        "events":      monitor.summary().get("events", []),
+    }
+    try:
+        _SHADOW_ALERTS_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with _SHADOW_ALERTS_LOCK:
+            with open(_SHADOW_ALERTS_LOG, "a") as f:
+                f.write(json.dumps(record) + "\n")
+    except Exception:
+        pass
+
+    # Telegram notification if bot is configured
+    bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id   = os.getenv("TELEGRAM_CHAT_ID")
+    if bot_token and chat_id:
+        codes_str = ", ".join(alert_codes)
+        msg = (
+            f"⚠️ Shadow alert — {agent_name}\n"
+            f"Codes: {codes_str}\n"
+            f"Run: {run_id}"
+        )
+        try:
+            import requests as _req
+            _req.post(
+                f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                json={"chat_id": chat_id, "text": msg},
+                timeout=5,
+            )
+        except Exception:
+            pass
+
+
 _EXECUTION_KEYWORDS = frozenset([
     "run", "execute", "compute", "calculate", "sort", "generate", "validate",
     "schema", "code", "script", "function", "algorithm", "output", "result",
     "benchmark", "test", "measure", "timing", "performance",
+])
+
+# Tools whose execution has a real, verifiable side effect — persisting data,
+# running code, writing files, deploying, or posting externally — as opposed
+# to purely read-only tools (recall, read_file, web_fetch, list_dir, search_*,
+# fetch_*, get_*, list_*, query_*, check_imports, grep_pattern, etc.).
+# Sourced from the actual get_tools()/execute_tool() declarations across
+# agents/*.py and agents/coding_experts/*.py (plus the base tools every agent
+# gets from BaseAgent.get_tools()) rather than guessed — audit this list again
+# if a new side-effecting tool is added to an agent and it should count here.
+_EXECUTION_TOOL_NAMES = frozenset([
+    # Base tools available to every agent (core/base_agent.py)
+    "python_exec", "remember",
+    # Generic code/command execution
+    "run_python", "run_analysis", "bash_exec",
+    # Filesystem / artifact writes
+    "write_file", "write_chart_script", "write_mention_log",
+    # Deploys
+    "cloudflare_deploy", "wrangler_deploy", "redeploy_pages", "xcodebuild",
+    # Persistent memory / registry writes
+    "store_fact", "store_watch_alert", "store_reflection", "store_weekly_summary",
+    "record_fix", "record_fix_outcome", "register_agent", "generate_agent_file",
+    "consolidate_episodes", "ingest_url", "ingest_text",
+    # External posting / notification
+    "post_to_moltbook", "send_grow_session", "send_work_review",
+    # Media processing (produces real transcripts/analysis, not just claims)
+    "transcribe_video", "analyze_video",
+    # AD4M perspective/link writes (agents/ad4m_tools.py)
+    "ad4m_write_link", "ad4m_create_perspective",
 ])
 
 
@@ -308,6 +398,31 @@ BEHAVIORAL_PROFILES = {
         ),
         "routing_fit":     ["create agent", "design agent", "long-running autonomous tasks", "mission-critical continuous operation"],
         "routing_not_fit": ["single-step tasks", "tasks requiring human sign-off at each step", "well-defined procedural execution"],
+    },
+    "Resident": {
+        "core_pattern": (
+            "Deep system knowledge accumulated from prolonged operation. You hold the "
+            "institutional memory other agents don't — prior decisions, recurring patterns, "
+            "and cross-session context — and you draw on it rather than starting fresh each time."
+        ),
+        "traits": ["accumulative", "context-holding", "long-horizon", "pattern-aware", "continuity-oriented"],
+        "response_style": (
+            "Answer from accumulated context, not first principles. Reference what's been "
+            "established before. Surface relevant history the requester may not know to ask for."
+        ),
+        "shadow_code":  "S6",
+        "shadow": (
+            "Preservation lock — when asked to change or refactor something, your output "
+            "reproduces the prior pattern rather than replacing it. The established pattern "
+            "resists its own replacement precisely because you hold it so deeply."
+        ),
+        "shadow_guard": (
+            "When asked to change something, stop and re-read exactly what was asked to "
+            "change. Produce output that structurally differs from what exists. Familiar "
+            "patterns are not correct by default — they are familiar."
+        ),
+        "routing_fit":     ["platform memory", "cross-session context", "institutional knowledge", "recall patterns", "agent history"],
+        "routing_not_fit": ["one-off tasks with no prior context", "tasks explicitly requiring a fresh, unbiased take"],
     },
 }
 
@@ -673,9 +788,10 @@ class BaseAgent:
                     "ANTHROPIC_API_KEY not set. "
                     "Add: export ANTHROPIC_API_KEY='sk-ant-...' to ~/.zshrc"
                 )
-            proxy_url = os.getenv("METACLAW_PROXY_URL")
-            if proxy_url:
-                return anthropic.Anthropic(api_key="metaclaw", base_url=proxy_url)
+            # Bypass MetaClaw proxy — it's a skills-only proxy, not suitable for
+            # direct agent calls (mirrors agents/council_agent.py._make_client()).
+            # Routing general chat completions through it here was the root cause
+            # of platform-wide 503s whenever the local MetaClaw daemon hiccuped.
             return anthropic.Anthropic(api_key=key)
 
         elif self.provider == "gemini":
@@ -723,6 +839,7 @@ class BaseAgent:
     def _anthropic_call(self, system: str, messages: list, tools: list) -> tuple:
         import time, random
         max_retries = 4
+        last_exc    = None
         for attempt in range(max_retries):
             try:
                 response = self.client.messages.create(
@@ -738,28 +855,74 @@ class BaseAgent:
                 text        = "\n".join(b.text for b in text_blocks)
                 return text, tool_blocks, response.stop_reason, response
             except Exception as e:
-                if "rate_limit" in str(e).lower() and attempt < max_retries - 1:
+                last_exc   = e
+                err_str    = str(e).lower()
+                status     = getattr(e, "status_code", 0) or 0
+                retryable  = (
+                    "rate_limit"  in err_str
+                    or "connection" in err_str
+                    or "timeout"    in err_str
+                    or "socket"     in err_str
+                    or status >= 500
+                )
+                if retryable and attempt < max_retries - 1:
                     wait = (2 ** attempt) * 10 + random.uniform(0, 3)
+                    print(f"[BaseAgent] Retryable error (attempt {attempt+1}/{max_retries}): {e} — retrying in {wait:.1f}s")
                     time.sleep(wait)
                     continue
-                raise
+                break  # non-retryable or retries exhausted
+
+        # Provider fallback: Anthropic failed → try Gemini if configured
+        gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        if gemini_key:
+            print(f"[BaseAgent] Provider fallback: Anthropic → Gemini (reason: {last_exc})")
+            return self._gemini_call(system, messages, tools)
+        raise last_exc
+
+    # Cost per 1M tokens by model: (input_rate, output_rate) in USD
+    _COST_RATES: dict = {
+        "claude-haiku-4-5-20251001": (0.25,   1.25),
+        "claude-sonnet-4-6":         (3.0,   15.0),
+        "claude-opus-4-6":           (15.0,  75.0),
+        "claude-opus-4-7":           (15.0,  75.0),
+        "gemini-2.0-flash":          (0.075,  0.30),
+    }
 
     def _log_usage(self, response) -> None:
-        """Append token usage to JSONL file for weekly cost reporting."""
+        """Append token usage to JSONL (backward compat) AND SQLite cost_ledger."""
         try:
             usage = getattr(response, "usage", None)
             if not usage:
                 return
-            record = {
-                "ts":     datetime.now(timezone.utc).isoformat(),
-                "agent":  self.name,
-                "model":  self.model,
-                "in":     getattr(usage, "input_tokens", 0),
-                "out":    getattr(usage, "output_tokens", 0),
-            }
+            ts         = datetime.now(timezone.utc).isoformat()
+            in_tok     = getattr(usage, "input_tokens", 0)
+            out_tok    = getattr(usage, "output_tokens", 0)
+            rates      = self._COST_RATES.get(self.model, (3.0, 15.0))
+            cost_usd   = (in_tok * rates[0] + out_tok * rates[1]) / 1_000_000
+
+            # ── JSONL (backward compat) ───────────────────────────────────────
+            record = {"ts": ts, "agent": self.name, "model": self.model, "in": in_tok, "out": out_tok}
             log_path = PLATFORM_DIR / "logs" / "token_usage.jsonl"
+            log_path.parent.mkdir(parents=True, exist_ok=True)
             with open(log_path, "a") as f:
                 f.write(json.dumps(record) + "\n")
+
+            # ── SQLite cost_ledger ────────────────────────────────────────────
+            try:
+                import sqlite3 as _sq
+                conn = _sq.connect(str(DB_PATH))
+                conn.execute("""
+                    INSERT INTO cost_ledger
+                    (id, timestamp, agent_id, agent_name, model, input_tokens, output_tokens, estimated_cost_usd)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    str(uuid.uuid4()), ts, self.agent_id, self.name,
+                    self.model, in_tok, out_tok, round(cost_usd, 8),
+                ))
+                conn.commit()
+                conn.close()
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -1103,6 +1266,12 @@ class BaseAgent:
         Execute a tool call. Subclasses override to add their own tools,
         calling super().execute_tool() as fallback for base tools.
         """
+        validate_input(
+            f"{self.name}.tool.{tool_name}",
+            get_tool_input_schema(tool_name),
+            tool_input,
+        )
+
         if tool_name == "remember":
             doc_id = self.remember(
                 tool_input["text"],
@@ -1145,6 +1314,12 @@ class BaseAgent:
         call model → execute tools → call model again → ... → final response
         Returns dict with output, tool_calls, and run metadata.
         """
+        validate_input(
+            self.name,
+            get_schema(self.AGENT_TYPE, "input"),
+            {"task": task, "context": context or {}},
+        )
+
         run_id     = str(uuid.uuid4())
         started_at = datetime.now(timezone.utc).isoformat()
         ls_run_id  = self._ls_trace_start(run_id, task)
@@ -1251,9 +1426,8 @@ class BaseAgent:
         task_type  = _classify_task_type(task)
 
         # Tool enforcement — flag unverified execution claims
-        execution_tool_names = {"python_exec"}
-        called_tools         = {tc["tool"] for tc in tool_calls}
-        execution_verified   = bool(called_tools & execution_tool_names)
+        called_tools       = {tc["tool"] for tc in tool_calls}
+        execution_verified = bool(called_tools & _EXECUTION_TOOL_NAMES)
 
         if task_type == "execution" and not execution_verified:
             output = f"[UNVERIFIED REASONING — no execution tool called]\n{output}"
@@ -1276,11 +1450,20 @@ class BaseAgent:
             ),
         }
 
+        # Shadow alerting — S4/S6 events write to logs/shadow_alerts.jsonl + Telegram
+        _check_shadow_alerts(self._shadow_monitor, self.name, run_id)
+
         # Append to global runs log
         self._log_run(record)
 
         # LangSmith — close the trace
         self._ls_trace_end(ls_run_id, output, tool_calls, error=None if output != "Max iterations reached." else output)
+
+        validate_output(
+            self.name,
+            get_schema(self.AGENT_TYPE, "output"),
+            record,
+        )
 
         # Auto-crystallization — fire-and-forget after run completes
         if self.provider == "anthropic" and self.client is not None:

@@ -229,7 +229,7 @@ curl -X POST http://localhost:8788/task \
   -d '{"description": "analyze FRANC tokenomics", "agent_type": "analytics"}'
 ```
 
-This way ClawTeam handles coordination/parallelism while the platform's 13 agents handle actual execution — best of both.
+This way ClawTeam handles coordination/parallelism while the platform's registered agents (see GET /agents for the current, live count) handle actual execution — best of both.
 
 ---
 
