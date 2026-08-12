@@ -1,0 +1,248 @@
+{
+  "run_at": "2026-08-10T07:11:52.473536+00:00",
+  "agents": {
+    "content_strategist": {
+      "passed": 0,
+      "failed": 3,
+      "total": 3,
+      "cases": [
+        {
+          "id": "cs_001",
+          "input": "Write a tweet thread (3 tweets) about the latest longevity science research on s",
+          "passed": false,
+          "failures": [
+            "missing '1/'",
+            "missing '2/'",
+            "missing '3/'",
+            "output too short (35 < 100)"
+          ],
+          "output_preview": "ERROR: HTTP Error 401: Unauthorized"
+        },
+        {
+          "id": "cs_002",
+          "input": "Draft a LinkedIn post about AuraSci's mission to make longevity science accessib",
+          "passed": false,
+          "failures": [
+            "missing 'longevity'",
+            "output too short (35 < 80)"
+          ],
+          "output_preview": "ERROR: HTTP Error 401: Unauthorized"
+        },
+        {
+          "id": "cs_003",
+          "input": "Write a Moltbook post summarizing why epigenetic reprogramming matters for aging",
+          "passed": false,
+          "failures": [
+            "missing 'aging'",
+            "missing 'reprogramm'",
+            "output too short (35 < 60)"
+          ],
+          "output_preview": "ERROR: HTTP Error 401: Unauthorized"
+        }
+      ]
+    },
+    "typescript": {
+      "passed": 0,
+      "failed": 3,
+      "total": 3,
+      "cases": [
+        {
+          "id": "ts_001",
+          "input": "Write a Cloudflare Worker that returns a JSON response with the current UTC time",
+          "passed": false,
+          "failures": [
+            "missing 'export default'",
+            "missing 'fetch'",
+            "missing 'Response'",
+            "missing 'JSON'",
+            "output too short (35 < 50)"
+          ],
+          "output_preview": "ERROR: HTTP Error 401: Unauthorized"
+        },
+        {
+          "id": "ts_002",
+          "input": "Write a Cloudflare D1 query to insert a row into a users table with name and ema",
+          "passed": false,
+          "failures": [
+            "missing 'prepare'",
+            "missing '.run('",
+            "missing 'INSERT'"
+          ],
+          "output_preview": "ERROR: HTTP Error 401: Unauthorized"
+        },
+        {
+          "id": "ts_003",
+          "input": "Write a Wrangler wrangler.toml config for a Worker named 'api-gateway' with D1 b",
+          "passed": false,
+          "failures": [
+            "missing 'name'",
+            "missing 'compatibility_date'",
+            "missing 'd1_databases'",
+            "missing 'binding'",
+            "output too short (35 < 40)"
+          ],
+          "output_preview": "ERROR: HTTP Error 401: Unauthorized"
+        }
+      ]
+    },
+    "python": {
+      "passed": 0,
+      "failed": 3,
+      "total": 3,
+      "cases": [
+        {
+          "id": "py_001",
+          "input": "Write a FastAPI endpoint GET /health that returns {status: ok, timestamp: <utc>}",
+          "passed": false,
+          "failures": [
+            "missing '@app.get'",
+            "missing 'return'",
+            "missing 'status'",
+            "missing 'FastAPI'",
+            "output too short (35 < 40)"
+          ],
+          "output_preview": "ERROR: HTTP Error 401: Unauthorized"
+        },
+        {
+          "id": "py_002",
+          "input": "Write a Python function that reads a JSON file and returns a dict, with error ha",
+          "passed": false,
+          "failures": [
+            "missing 'def '",
+            "missing 'json'",
+            "missing 'return'",
+            "missing 'except'"
+          ],
+          "output_preview": "ERROR: HTTP Error 401: Unauthorized"
+        },
+        {
+          "id": "py_003",
+          "input": "Write a Python dataclass for a User with name, email, and created_at fields",
+          "passed": false,
+          "failures": [
+            "missing '@dataclass'",
+            "missing 'name'",
+            "missing 'email'",
+            "missing 'created_at'"
+          ],
+          "output_preview": "ERROR: HTTP Error 401: Unauthorized"
+        }
+      ]
+    },
+    "ops": {
+      "passed": 0,
+      "failed": 3,
+      "total": 3,
+      "cases": [
+        {
+          "id": "ops_001",
+          "input": "Check the health of all running services and report status",
+          "passed": false,
+          "failures": [
+            "missing 'status'",
+            "missing 'health'"
+          ],
+          "output_preview": "ERROR: HTTP Error 401: Unauthorized"
+        },
+        {
+          "id": "ops_002",
+          "input": "List all running launchd services related to the agent platform",
+          "passed": false,
+          "failures": [
+            "missing 'agent'",
+            "missing 'platform'"
+          ],
+          "output_preview": "ERROR: HTTP Error 401: Unauthorized"
+        },
+        {
+          "id": "ops_003",
+          "input": "Summarize the current date, time in UTC, and what day of the week it is",
+          "passed": false,
+          "failures": [
+            "missing 'UTC'",
+            "missing '2026'"
+          ],
+          "output_preview": "ERROR: HTTP Error 401: Unauthorized"
+        }
+      ]
+    },
+    "monitoring": {
+      "passed": 0,
+      "failed": 3,
+      "total": 3,
+      "cases": [
+        {
+          "id": "mon_001",
+          "input": "Search for recent mentions of 'AuraSci' on Twitter/X and summarize what you find",
+          "passed": false,
+          "failures": [
+            "missing 'AuraSci'",
+            "missing 'mention'"
+          ],
+          "output_preview": "ERROR: HTTP Error 401: Unauthorized"
+        },
+        {
+          "id": "mon_002",
+          "input": "Draft a professional reply to a positive tweet about longevity science in the vo",
+          "passed": false,
+          "failures": [
+            "missing 'longevity'"
+          ],
+          "output_preview": "ERROR: HTTP Error 401: Unauthorized"
+        },
+        {
+          "id": "mon_003",
+          "input": "Classify this message as positive, neutral, or negative: 'This longevity startup",
+          "passed": false,
+          "failures": [
+            "missing 'negative'"
+          ],
+          "output_preview": "ERROR: HTTP Error 401: Unauthorized"
+        }
+      ]
+    },
+    "research": {
+      "passed": 0,
+      "failed": 3,
+      "total": 3,
+      "cases": [
+        {
+          "id": "res_001",
+          "input": "Summarize what senolytic therapy is and its potential impact on human longevity",
+          "passed": false,
+          "failures": [
+            "missing 'senolytic'",
+            "missing 'aging'",
+            "missing 'cells'",
+            "output too short (35 < 80)"
+          ],
+          "output_preview": "ERROR: HTTP Error 401: Unauthorized"
+        },
+        {
+          "id": "res_002",
+          "input": "What are the current leading theories on why organisms age at a cellular level?",
+          "passed": false,
+          "failures": [
+            "missing 'telomere'",
+            "missing 'mitochondria'",
+            "missing 'aging'",
+            "output too short (35 < 80)"
+          ],
+          "output_preview": "ERROR: HTTP Error 401: Unauthorized"
+        },
+        {
+          "id": "res_003",
+          "input": "Explain epigenetic reprogramming in the context of Yamanaka factors and longevit",
+          "passed": false,
+          "failures": [
+            "missing 'Yamanaka'",
+            "missing 'reprogramm'",
+            "missing 'factor'",
+            "output too short (35 < 80)"
+          ],
+          "output_preview": "ERROR: HTTP Error 401: Unauthorized"
+        }
+      ]
+    }
+  }
+}

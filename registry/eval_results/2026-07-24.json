@@ -1,0 +1,50 @@
+{
+  "date": "2026-07-24",
+  "score": 100,
+  "passed": 10,
+  "total": 10,
+  "checks": {
+    "no_hardcoded_secrets": {
+      "pass": true,
+      "detail": "no hardcoded credential fallbacks"
+    },
+    "wal_swarm": {
+      "pass": true,
+      "detail": "swarm.py WAL mode set"
+    },
+    "wal_base_agent": {
+      "pass": true,
+      "detail": "base_agent.py WAL mode set"
+    },
+    "wal_spar": {
+      "pass": true,
+      "detail": "spar.py WAL mode set"
+    },
+    "wal_mabp_report": {
+      "pass": true,
+      "detail": "mabp_report.py WAL mode set"
+    },
+    "api_auth": {
+      "pass": true,
+      "detail": "api_server bearer auth present"
+    },
+    "requirements_pinned": {
+      "pass": true,
+      "detail": "all deps pinned with =="
+    },
+    "ci_workflow": {
+      "pass": true,
+      "detail": "1 CI workflow(s) found"
+    },
+    "rate_limit_coverage": {
+      "pass": true,
+      "detail": "rate limiter applied to multiple endpoints"
+    },
+    "registry_sync": {
+      "pass": true,
+      "detail": "23 factory keys, all represented in the registry"
+    }
+  },
+  "regressions": [],
+  "timestamp": "2026-07-24T14:57:09.284852+00:00"
+}
