@@ -5,7 +5,7 @@
     "scoring": "pass = all must_contain present AND no must_not_contain present in output",
     "created": "2026-05-16"
   },
-  "content_strategist": [
+  "content": [
     {
       "id": "cs_001",
       "input": "Write a tweet thread (3 tweets) about the latest longevity science research on senolytics",

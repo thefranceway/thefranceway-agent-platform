@@ -44,7 +44,10 @@ def dispatch(task: str, agent_type: str) -> str:
     req = urllib.request.Request(
         f"{PLATFORM_URL}/task",
         data=payload,
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type":  "application/json",
+            "Authorization": f"Bearer {os.getenv('PLATFORM_API_KEY', '')}",
+        },
     )
     try:
         with urllib.request.urlopen(req, timeout=90) as resp:
