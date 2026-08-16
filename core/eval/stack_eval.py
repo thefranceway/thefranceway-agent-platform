@@ -215,6 +215,49 @@ def check_registry_matches_factories() -> tuple[bool, str]:
     return True, f"{len(factory_types)} factory keys, all represented in the registry"
 
 
+def check_html_doc_agent_count() -> tuple[bool, str]:
+    """
+    stack/claude-tools.html hardcodes a `platform:` agent count in its STACK
+    JS const (used to render the site's stats). That figure drifted across
+    15/23/31/33/34 over five months, and at no point during that drift did it
+    ever match the live registry/agents.json count. Nothing previously caught
+    this except manual eyeballing of the rendered page, which nobody was
+    reliably doing. This check makes that class of drift fail CI instead of
+    requiring a manual audit to catch it again — same treatment as
+    check_registry_matches_factories() gives registry/factory drift.
+    """
+    agents_json_path = ROOT / "registry" / "agents.json"
+    try:
+        agents = json.loads(agents_json_path.read_text())
+    except FileNotFoundError:
+        return False, "registry/agents.json not found"
+
+    live_count = len(agents)
+
+    html_path = ROOT / "stack" / "claude-tools.html"
+    try:
+        html = html_path.read_text()
+    except FileNotFoundError:
+        return False, "stack/claude-tools.html not found"
+
+    stack_line = next((ln for ln in html.splitlines() if "const STACK" in ln), None)
+    if stack_line is None:
+        return False, "stack/claude-tools.html has no `const STACK = {...}` line to check"
+
+    match = re.search(r"platform:\s*(\d+)", stack_line)
+    if not match:
+        return False, "found `const STACK` line but couldn't parse a `platform:` count out of it"
+
+    doc_count = int(match.group(1))
+
+    if doc_count == live_count:
+        return True, f"doc declares {doc_count}, matches live registry ({live_count})"
+    return False, (
+        f"doc declares {doc_count} agents but registry/agents.json has {live_count} — "
+        f"stack/claude-tools.html is stale, update the STACK const and section counts"
+    )
+
+
 # ── Runner ────────────────────────────────────────────────────────────────────
 
 CHECKS = [
@@ -228,6 +271,7 @@ CHECKS = [
     ("ci_workflow",           check_ci_workflow),
     ("rate_limit_coverage",   check_rate_limit_on_task),
     ("registry_sync",         check_registry_matches_factories),
+    ("html_doc_agent_count",  check_html_doc_agent_count),
 ]
 
 
