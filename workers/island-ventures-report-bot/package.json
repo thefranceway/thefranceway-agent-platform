@@ -1,0 +1,11 @@
+{
+  "name": "island-ventures-report-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Telegram to Google Doc field report pipeline for Island Ventures venture scouting",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail island-ventures-report-bot",
+    "d1": "wrangler d1 execute island-ventures-reports"
+  }
+}

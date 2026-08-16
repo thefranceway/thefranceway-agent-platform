@@ -1,0 +1,12 @@
+{
+  "name": "island-ventures-report-bot",
+  "main": "src/worker.js",
+  "compatibility_date": "2025-01-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "island-ventures-reports",
+      "database_id": "43f317d9-0441-4562-b39f-d93290bb09ab"
+    }
+  ]
+}
