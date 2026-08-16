@@ -50,6 +50,37 @@ mcp-server/server.py       — MCP interface for Claude Code integration
 create_agent.py            — Interactive CLI to register new agents
 ```
 
+### TencentDB Memory Layer
+
+```
+Agent Request
+    ↓
+tdai-proxy (port 8096)                 — OpenAI-compatible API facade
+    ↓
+memory-core (port 8420)                — Memory orchestration, translates to AD4M operations
+    ↓
+AD4M (local GraphQL executor)          — Persistent semantic memory graph
+```
+
+Agents query and write persistent memory through standard OpenAI SDK calls. The proxy layer (`tdai-proxy`) provides API compatibility, `memory-core` orchestrates memory operations, and AD4M stores everything as signed RDF-style link expressions.
+
+**Start the stack:**
+```bash
+claudemem                  # Shell alias: cd ~/Code/memory-core && ./start-proxy.sh
+```
+
+**Integration points:**
+- `skill` — Skills invoke memory via OpenAI client (base_url: `http://localhost:8096/v1`)
+- `knowledge` — Knowledge base queries through the same API surface
+- `tdai-memory` — Direct AD4M link writes from agents
+
+**Critical configuration:**
+- `UPSTREAM_URL` must include `/v1`: `http://localhost:8420/v1`
+- Model: `claude-sonnet-4-5-20250929`
+- API key: `tdai-memory-key-2026` (must match across proxy, core, and clients)
+
+See `docs/TENCENTDB_MEMORY.md` for full architecture details and troubleshooting.
+
 ---
 
 ## Core Concepts

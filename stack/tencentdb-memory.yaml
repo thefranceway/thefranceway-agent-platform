@@ -1,0 +1,229 @@
+# TencentDB Memory Stack Configuration
+# Architecture: tdai-proxy (8096) -> memory-core (8420) -> AD4M
+
+version: "1.0"
+
+stack:
+  name: tencentdb-memory
+  description: "OpenAI-compatible memory layer with AD4M persistence"
+
+services:
+  - name: ad4m-executor
+    description: "Local AD4M GraphQL executor for semantic memory graph"
+    type: external
+    health_check:
+      endpoint: "http://localhost:4000/graphql"
+      method: POST
+      body: '{"query": "{ agent { did } }"}'
+      expected_status: 200
+    notes: |
+      AD4M runs as a separate process. Start with:
+        ad4m-host serve
+
+      Verify with:
+        curl -X POST http://localhost:4000/graphql \
+          -H "Content-Type: application/json" \
+          -d '{"query": "{ agent { did } }"}'
+
+  - name: memory-core
+    description: "Memory orchestration layer — translates OpenAI API to AD4M operations"
+    type: node
+    port: 8420
+    directory: "~/Code/memory-core"
+    start_command: "npm run dev"
+    environment:
+      - API_KEY=tdai-memory-key-2026
+      - AD4M_GRAPHQL_URL=http://localhost:4000/graphql
+      - PORT=8420
+    dependencies:
+      - ad4m-executor
+    health_check:
+      endpoint: "http://localhost:8420/v1/health"
+      method: GET
+      expected_status: 200
+      expected_body:
+        status: "ok"
+        ad4m_connected: true
+    notes: |
+      CRITICAL: Routes must include /v1 prefix
+
+      Valid routes:
+        POST /v1/chat/completions
+        POST /v1/embeddings
+        GET  /v1/health
+
+  - name: tdai-proxy
+    description: "OpenAI-compatible API facade — forwards to memory-core"
+    type: node
+    port: 8096
+    directory: "~/Code/tdai-proxy"
+    start_command: "npm run dev"
+    environment:
+      - UPSTREAM_URL=http://localhost:8420/v1     # /v1 is REQUIRED
+      - PORT=8096
+    dependencies:
+      - memory-core
+    health_check:
+      endpoint: "http://localhost:8096/health"
+      method: GET
+      expected_status: 200
+      expected_body:
+        status: "healthy"
+        upstream: "http://localhost:8420/v1"
+    notes: |
+      CRITICAL: UPSTREAM_URL must include /v1
+
+      Wrong: http://localhost:8420
+      Right: http://localhost:8420/v1
+
+      Without /v1, requests will be malformed:
+        /chat/completions instead of /v1/chat/completions
+
+integration:
+  model: "claude-sonnet-4-5-20250929"
+  api_key: "tdai-memory-key-2026"
+
+  usage_examples:
+    - name: "Query memory from agent"
+      language: python
+      code: |
+        from openai import OpenAI
+
+        client = OpenAI(
+            base_url="http://localhost:8096/v1",
+            api_key="tdai-memory-key-2026"
+        )
+
+        response = client.chat.completions.create(
+            model="claude-sonnet-4-5-20250929",
+            messages=[
+                {"role": "user", "content": "Recall all facts about project X"}
+            ]
+        )
+
+        print(response.choices[0].message.content)
+
+    - name: "Write memory from agent"
+      language: python
+      code: |
+        from openai import OpenAI
+
+        client = OpenAI(
+            base_url="http://localhost:8096/v1",
+            api_key="tdai-memory-key-2026"
+        )
+
+        response = client.chat.completions.create(
+            model="claude-sonnet-4-5-20250929",
+            messages=[
+                {"role": "system", "content": "action: write_memory"},
+                {"role": "user", "content": "source: agent://session/2026-08-17, predicate: ad4m://knows, target: literal://New fact stored"}
+            ]
+        )
+
+    - name: "Query knowledge base"
+      language: python
+      code: |
+        from openai import OpenAI
+
+        client = OpenAI(
+            base_url="http://localhost:8096/v1",
+            api_key="tdai-memory-key-2026"
+        )
+
+        response = client.chat.completions.create(
+            model="claude-sonnet-4-5-20250929",
+            messages=[
+                {"role": "system", "content": "knowledge_base: desci-modules"},
+                {"role": "user", "content": "What are the key concepts?"}
+            ]
+        )
+
+startup:
+  recommended_order:
+    1. "Start AD4M executor: ad4m-host serve"
+    2. "Verify AD4M: curl -X POST http://localhost:4000/graphql -H 'Content-Type: application/json' -d '{\"query\": \"{ agent { did } }\"}'"
+    3. "Start memory-core: cd ~/Code/memory-core && npm run dev"
+    4. "Verify memory-core: curl http://localhost:8420/v1/health"
+    5. "Start tdai-proxy: cd ~/Code/tdai-proxy && npm run dev"
+    6. "Verify tdai-proxy: curl http://localhost:8096/health"
+
+  quick_start_script: "./start-proxy.sh"
+  shell_alias: "claudemem"
+
+verification:
+  end_to_end_test:
+    description: "Full stack health check with memory query"
+    command: |
+      curl -X POST http://localhost:8096/v1/chat/completions \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer tdai-memory-key-2026" \
+        -d '{
+          "model": "claude-sonnet-4-5-20250929",
+          "messages": [
+            {"role": "user", "content": "Recall all facts about thefranceway-agent-platform"}
+          ]
+        }'
+    expected_response:
+      - "Structured memory results from AD4M"
+      - "No connection errors"
+      - "Response includes facts stored in the graph"
+
+troubleshooting:
+  common_issues:
+    - error: "Connection refused on port 8420"
+      cause: "memory-core is not running"
+      fix: "cd ~/Code/memory-core && npm run dev"
+
+    - error: "404 Not Found from tdai-proxy"
+      cause: "UPSTREAM_URL missing /v1"
+      fix: "Update tdai-proxy .env: UPSTREAM_URL=http://localhost:8420/v1"
+
+    - error: "Invalid API key"
+      cause: "Key mismatch between client and memory-core"
+      fix: "Ensure both use: tdai-memory-key-2026"
+
+    - error: "Model not found"
+      cause: "Wrong model identifier"
+      fix: "Use exact model: claude-sonnet-4-5-20250929"
+
+    - error: "AD4M not connected"
+      cause: "AD4M executor not running or unreachable"
+      fix: "Start AD4M: ad4m-host serve, then restart memory-core"
+
+security:
+  notes:
+    - "API key is placeholder — rotate in production"
+    - "Ports 8096 and 8420 bind to localhost only"
+    - "AD4M keystore must be protected"
+    - "Memory writes are signed by local AD4M agent DID"
+
+maintenance:
+  log_locations:
+    - service: ad4m-executor
+      log_path: "~/.ad4m/logs/executor.log"
+
+    - service: memory-core
+      log_path: "stdout (npm run dev)"
+
+    - service: tdai-proxy
+      log_path: "stdout (npm run dev)"
+
+  monitoring:
+    - metric: "Request latency (tdai-proxy → memory-core)"
+      threshold: "< 200ms for cached queries"
+
+    - metric: "AD4M link write success rate"
+      threshold: "> 99%"
+
+    - metric: "Memory recall accuracy"
+      threshold: "Manual validation via spot checks"
+
+metadata:
+  created: "2026-08-17"
+  updated: "2026-08-17"
+  author: "Francesca Ranieri"
+  repository: "thefranceway-agent-platform"
+  related_docs:
+    - "docs/TENCENTDB_MEMORY.md"
+    - "README.md (Architecture section)"
