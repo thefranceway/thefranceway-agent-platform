@@ -426,6 +426,19 @@ BEHAVIORAL_PROFILES = {
     },
 }
 
+# Per-profile sampling temperature — previously every agent ran at the
+# Anthropic default (temperature unset) regardless of behavioral_profile,
+# so Architect (should build tight and deterministic) and Philosopher
+# (should range wider) got identical sampling. Keyed by behavioral_profile,
+# not agent_type, since multiple agent_types share a profile.
+TEMP_BY_PROFILE = {
+    "Architect":   0.2,
+    "Substrate":   0.0,
+    "Philosopher": 0.7,
+    "Agent":       0.4,
+    "Resident":    0.3,
+}
+
 # ── JSON Vector Store ────────────────────────────────────────────────────────
 
 class JSONVectorStore:
@@ -843,11 +856,12 @@ class BaseAgent:
         for attempt in range(max_retries):
             try:
                 response = self.client.messages.create(
-                    model      = self.model,
-                    max_tokens = self.max_tokens,
-                    system     = system,
-                    tools      = tools,
-                    messages   = messages,
+                    model       = self.model,
+                    max_tokens  = self.max_tokens,
+                    temperature = TEMP_BY_PROFILE.get(self.behavioral_profile, 1.0),
+                    system      = system,
+                    tools       = tools,
+                    messages    = messages,
                 )
                 self._log_usage(response)
                 tool_blocks = [b for b in response.content if b.type == "tool_use"]

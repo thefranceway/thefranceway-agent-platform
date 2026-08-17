@@ -522,7 +522,7 @@ class Orchestrator:
                 agent_type         = agent_type,
                 routing_layer      = routing_layer,
                 routing_confidence = routing_confidence,
-                shadow_summary     = result.get("shadow_monitor", {}),
+                shadow_summary     = result.get("shadow_events", {}) or {},
                 had_error          = False,
             )
             _run_feedback(result)
