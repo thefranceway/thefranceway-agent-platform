@@ -20,6 +20,7 @@ Logs: ~/projects/agent-platform/logs/work_coach.log
 
 import json
 import logging
+import os
 import ssl
 import sys
 import urllib.request
@@ -31,7 +32,11 @@ from core.base_agent import BaseAgent, JSONVectorStore
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
+<<<<<<< HEAD
 BOT_TOKEN     = "REDACTED-TELEGRAM-BOT-TOKEN"
+=======
+BOT_TOKEN     = os.getenv("TELEGRAM_BOT_TOKEN", "")
+>>>>>>> e825d6f (security: scrub hardcoded Telegram bot token from coach agents)
 BOT_API       = f"https://api.telegram.org/bot{BOT_TOKEN}"
 OWNER_CHAT_ID = 7049234595
 
