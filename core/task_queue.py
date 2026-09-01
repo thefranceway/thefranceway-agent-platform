@@ -11,7 +11,7 @@ Task lifecycle: pending → running → done | failed
 import json
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -29,6 +29,33 @@ except (ImportError, ModuleNotFoundError):
 PLATFORM_DIR = Path(__file__).parent.parent
 DB_PATH      = PLATFORM_DIR / "registry" / "agent_platform.db"
 
+# How long a claimed task gets before it's considered abandoned (crashed
+# orchestrator, killed process, etc.) and eligible to be reaped back to
+# pending by reap_stale_tasks().
+LEASE_DURATION       = timedelta(minutes=10)
+MAX_REAP_ATTEMPTS    = 3
+
+# Columns added for lease/heartbeat tracking. Migrated in on every get_db()
+# call (cheap PRAGMA check) so both the live DB and any pre-existing DB that
+# predates this feature pick them up without a separate migration step.
+_LEASE_COLUMNS = {
+    "lease_expires_at": "DATETIME",
+    "heartbeat_at":      "DATETIME",
+    "attempts":          "INTEGER DEFAULT 0",
+}
+
+
+def _migrate_lease_columns(conn: sqlite3.Connection) -> None:
+    """Add lease_expires_at / heartbeat_at / attempts to tasks if missing."""
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)")}
+    added = False
+    for col, coltype in _LEASE_COLUMNS.items():
+        if col not in existing:
+            conn.execute(f"ALTER TABLE tasks ADD COLUMN {col} {coltype}")
+            added = True
+    if added:
+        conn.commit()
+
 
 def get_db() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -36,6 +63,12 @@ def get_db() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
+    # tasks table may not exist yet on a brand-new DB (agent_registry.init_db()
+    # creates it) — migration is a no-op until then.
+    if conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='tasks'"
+    ).fetchone():
+        _migrate_lease_columns(conn)
     return conn
 
 
@@ -102,18 +135,100 @@ class TaskQueue:
                 return None
 
             task = dict(row)
+            now          = datetime.now(timezone.utc)
+            now_iso      = now.isoformat()
+            lease_expiry = (now + LEASE_DURATION).isoformat()
             conn.execute(
-                "UPDATE tasks SET status = 'running', started_at = ? WHERE id = ?",
-                (datetime.now(timezone.utc).isoformat(), task["id"]),
+                """
+                UPDATE tasks
+                SET status = 'running', started_at = ?,
+                    lease_expires_at = ?, heartbeat_at = ?,
+                    attempts = COALESCE(attempts, 0) + 1
+                WHERE id = ?
+                """,
+                (now_iso, lease_expiry, now_iso, task["id"]),
             )
             conn.commit()
-            task["status"] = "running"
+            task["status"]            = "running"
+            task["started_at"]        = now_iso
+            task["lease_expires_at"]  = lease_expiry
+            task["heartbeat_at"]      = now_iso
+            task["attempts"]          = (task.get("attempts") or 0) + 1
             if task.get("input"):
                 try:
                     task["input"] = json.loads(task["input"])
                 except Exception:
                     pass
             return task
+        finally:
+            conn.close()
+
+    def heartbeat_task(self, task_id: str) -> bool:
+        """
+        Touch heartbeat_at AND extend lease_expires_at for a running task.
+        Called periodically (every 60s, from the orchestrator) while an agent
+        is actively working a claimed task. Extending the lease here is what
+        makes the heartbeat mechanically meaningful: a genuinely long-running
+        task keeps renewing its lease and is never reaped, while a task whose
+        process died stops heartbeating and its lease eventually expires.
+        """
+        conn = get_db()
+        now          = datetime.now(timezone.utc)
+        now_iso      = now.isoformat()
+        lease_expiry = (now + LEASE_DURATION).isoformat()
+        conn.execute(
+            """
+            UPDATE tasks
+            SET heartbeat_at = ?, lease_expires_at = ?
+            WHERE id = ? AND status = 'running'
+            """,
+            (now_iso, lease_expiry, task_id),
+        )
+        conn.commit()
+        conn.close()
+        return True
+
+    def reap_stale_tasks(self) -> list[str]:
+        """
+        Find tasks stuck at status='running' whose lease has expired
+        (orchestrator crashed/killed mid-task, nothing ever called
+        complete_task/fail_task) and put them back to pending so they get
+        picked up again.
+
+        Tasks that have already been reaped MAX_REAP_ATTEMPTS times are left
+        alone (status stays 'running') rather than requeued forever — this is
+        just the reaper's own runaway-retry guard; permanently dead tasks
+        past that point need a human look via list_tasks(status='running').
+
+        Returns the list of task_ids that were reset to pending.
+        """
+        conn = get_db()
+        try:
+            now = datetime.now(timezone.utc).isoformat()
+            rows = conn.execute(
+                """
+                SELECT id FROM tasks
+                WHERE status = 'running'
+                  AND lease_expires_at IS NOT NULL
+                  AND lease_expires_at < ?
+                  AND COALESCE(attempts, 0) < ?
+                """,
+                (now, MAX_REAP_ATTEMPTS),
+            ).fetchall()
+            task_ids = [row["id"] for row in rows]
+            if task_ids:
+                placeholders = ",".join("?" * len(task_ids))
+                conn.execute(
+                    f"""
+                    UPDATE tasks
+                    SET status = 'pending', started_at = NULL,
+                        lease_expires_at = NULL, heartbeat_at = NULL
+                    WHERE id IN ({placeholders})
+                    """,
+                    task_ids,
+                )
+                conn.commit()
+            return task_ids
         finally:
             conn.close()
 

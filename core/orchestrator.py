@@ -33,6 +33,7 @@ import json
 import os
 import sys
 import re
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
@@ -249,6 +250,42 @@ def make_agent(agent_type: str, spec: dict = None, provider: str = None):
     if agent_type not in AGENT_FACTORIES:
         raise ValueError(f"Unknown agent type: {agent_type}. Valid: {list(AGENT_FACTORIES)}")
     return AGENT_FACTORIES[agent_type](kwargs)
+
+
+# ── Task lease heartbeat ────────────────────────────────────────────────────
+# Keeps a claimed task's heartbeat_at fresh while an agent is actively working
+# it, so reap_stale_tasks() (core/task_queue.py) can tell "still running, just
+# slow" apart from "orchestrator died mid-task" for runs that outlive a single
+# lease window. Lives here rather than in BaseAgent.run() itself — task_id is
+# already in scope at the dispatch() call site and this keeps the queue/lease
+# concern out of the agent tool loop.
+
+HEARTBEAT_INTERVAL_SECONDS = 60
+
+
+class _HeartbeatThread:
+    """Context manager: touches queue.heartbeat_task(task_id) every 60s."""
+
+    def __init__(self, queue, task_id: str):
+        self._queue      = queue
+        self._task_id    = task_id
+        self._stop_event = threading.Event()
+        self._thread     = threading.Thread(target=self._run, daemon=True)
+
+    def _run(self):
+        while not self._stop_event.wait(HEARTBEAT_INTERVAL_SECONDS):
+            try:
+                self._queue.heartbeat_task(self._task_id)
+            except Exception:
+                pass  # heartbeat is best-effort; never let it break the run
+
+    def __enter__(self):
+        self._thread.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._stop_event.set()
+        self._thread.join(timeout=1)
 
 
 # ── Orchestrator ──────────────────────────────────────────────────────────────
@@ -497,7 +534,11 @@ class Orchestrator:
             agent = make_agent(agent_type, provider=provider)
             if skills is not None:
                 agent.load_skills(skills)
-            result = agent.run(task, context=context)
+            if task_id:
+                with _HeartbeatThread(self.queue, task_id):
+                    result = agent.run(task, context=context)
+            else:
+                result = agent.run(task, context=context)
             result["agent_type"]          = agent_type
             result["routed_by"]           = "orchestrator"
             result["routing_confidence"]  = routing_confidence
@@ -522,7 +563,7 @@ class Orchestrator:
                 agent_type         = agent_type,
                 routing_layer      = routing_layer,
                 routing_confidence = routing_confidence,
-                shadow_summary     = result.get("shadow_events", {}) or {},
+                shadow_summary     = result.get("shadow_events", {}) or {"events": [], "events_detected": 0},
                 had_error          = False,
             )
             _run_feedback(result)
@@ -603,6 +644,11 @@ class Orchestrator:
         Process pending tasks from the queue.
         Claims tasks one at a time to avoid conflicts.
         """
+        reaped = self.queue.reap_stale_tasks()
+        if reaped:
+            print(f"[Queue] Reaped {len(reaped)} stale task(s) back to pending: "
+                  f"{[t[:8] for t in reaped]}")
+
         processed = []
         for _ in range(max_tasks):
             task = self.queue.claim_task()
