@@ -36,3 +36,6 @@ workers/*/node_modules/
 dist/
 build/
 *.egg-info/
+registry/eval_results/
+registry/*.db-shm
+registry/*.db-wal
