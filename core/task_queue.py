@@ -118,50 +118,69 @@ class TaskQueue:
     def claim_task(self, agent_type: str = None) -> Optional[dict]:
         """
         Atomically claim the highest-priority pending task.
-        Optionally filter by agent_type.
-        Returns the task dict or None if queue is empty.
+        Cross-process safe via FileLock + BEGIN IMMEDIATE + atomic UPDATE.
         """
-        conn = get_db()
-        try:
-            query  = "SELECT * FROM tasks WHERE status = 'pending'"
-            params = []
-            if agent_type:
-                query  += " AND (agent_type = ? OR agent_type IS NULL)"
-                params.append(agent_type)
-            query += " ORDER BY priority ASC, created_at ASC LIMIT 1"
-
-            row = conn.execute(query, params).fetchone()
-            if not row:
+        import time, random, sqlite3
+        from filelock import FileLock
+        lock_path = str(DB_PATH) + ".claim.lock"
+        with FileLock(lock_path, timeout=15):
+            conn = get_db()
+            try:
+                for attempt in range(20):
+                    try:
+                        conn.execute("BEGIN IMMEDIATE")
+                        now = datetime.now(timezone.utc)
+                        now_iso = now.isoformat()
+                        lease_expiry = (now + LEASE_DURATION).isoformat()
+                        if agent_type:
+                            cur = conn.execute(
+                                """
+                                UPDATE tasks
+                                SET status='running', started_at=?, lease_expires_at=?, heartbeat_at=?,
+                                    attempts=COALESCE(attempts,0)+1
+                                WHERE id = (
+                                    SELECT id FROM tasks
+                                    WHERE status='pending' AND (agent_type=? OR agent_type IS NULL)
+                                    ORDER BY priority ASC, created_at ASC LIMIT 1
+                                ) AND status='pending'
+                                RETURNING *
+                                """, (now_iso, lease_expiry, now_iso, agent_type))
+                        else:
+                            cur = conn.execute(
+                                """
+                                UPDATE tasks
+                                SET status='running', started_at=?, lease_expires_at=?, heartbeat_at=?,
+                                    attempts=COALESCE(attempts,0)+1
+                                WHERE id = (
+                                    SELECT id FROM tasks WHERE status='pending'
+                                    ORDER BY priority ASC, created_at ASC LIMIT 1
+                                ) AND status='pending'
+                                RETURNING *
+                                """, (now_iso, lease_expiry, now_iso))
+                        row = cur.fetchone()
+                        conn.execute("COMMIT")
+                        if not row:
+                            return None
+                        task = dict(row)
+                        if task.get("input"):
+                            try:
+                                task["input"] = json.loads(task["input"])
+                            except Exception:
+                                pass
+                        return task
+                    except sqlite3.OperationalError as e:
+                        try:
+                            conn.execute("ROLLBACK")
+                        except Exception:
+                            pass
+                        msg = str(e).upper()
+                        if "BUSY" in msg or "LOCKED" in msg:
+                            time.sleep(random.uniform(0.005, 0.05) * (attempt + 1))
+                            continue
+                        raise
                 return None
-
-            task = dict(row)
-            now          = datetime.now(timezone.utc)
-            now_iso      = now.isoformat()
-            lease_expiry = (now + LEASE_DURATION).isoformat()
-            conn.execute(
-                """
-                UPDATE tasks
-                SET status = 'running', started_at = ?,
-                    lease_expires_at = ?, heartbeat_at = ?,
-                    attempts = COALESCE(attempts, 0) + 1
-                WHERE id = ?
-                """,
-                (now_iso, lease_expiry, now_iso, task["id"]),
-            )
-            conn.commit()
-            task["status"]            = "running"
-            task["started_at"]        = now_iso
-            task["lease_expires_at"]  = lease_expiry
-            task["heartbeat_at"]      = now_iso
-            task["attempts"]          = (task.get("attempts") or 0) + 1
-            if task.get("input"):
-                try:
-                    task["input"] = json.loads(task["input"])
-                except Exception:
-                    pass
-            return task
-        finally:
-            conn.close()
+            finally:
+                conn.close()
 
     def claim_task_by_id(self, task_id: str) -> Optional[dict]:
         conn = get_db()
