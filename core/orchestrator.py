@@ -365,11 +365,18 @@ class Orchestrator:
             "Depth over speed, synthesis before action. Use for: research, analyze, synthesize, "
             "explore, write posts, content strategy, brand voice, literature review."
         ),
-        "Agent → meta/memory/monitoring": (
+        "Agent → meta/monitoring": (
             "The Agent runs on momentum — fast, self-directed, generating output without waiting "
             "for permission. Grit: works through walls rather than around them. Autonomous, "
-            "mission-oriented. Use for: create agent, cross-session memory, brand monitoring, "
+            "mission-oriented. Use for: create agent, brand monitoring, "
             "social listening, autonomous loops."
+        ),
+        "Resident → memory": (
+            "The Resident holds deep system knowledge accumulated from prolonged operation — "
+            "institutional memory other agents don't have, prior decisions, recurring patterns, "
+            "and cross-session context — and draws on it rather than starting fresh each time. "
+            "Use for: cross-session memory, platform memory, institutional knowledge, "
+            "recall patterns, agent history."
         ),
         "Architect → media": (
             "Processes structured inputs (video, audio) into structured outputs (transcripts, "
