@@ -163,6 +163,41 @@ class TaskQueue:
         finally:
             conn.close()
 
+    def claim_task_by_id(self, task_id: str) -> Optional[dict]:
+        conn = get_db()
+        try:
+            row = conn.execute("SELECT * FROM tasks WHERE id = ? AND status = 'pending'", (task_id,)).fetchone()
+            if not row:
+                return None
+            task = dict(row)
+            now = datetime.now(timezone.utc)
+            now_iso = now.isoformat()
+            lease_expiry = (now + LEASE_DURATION).isoformat()
+            conn.execute(
+                """
+                UPDATE tasks
+                SET status = 'running', started_at = ?,
+                    lease_expires_at = ?, heartbeat_at = ?,
+                    attempts = COALESCE(attempts, 0) + 1
+                WHERE id = ? AND status = 'pending'
+                """,
+                (now_iso, lease_expiry, now_iso, task_id),
+            )
+            conn.commit()
+            task["status"] = "running"
+            task["started_at"] = now_iso
+            task["lease_expires_at"] = lease_expiry
+            task["heartbeat_at"] = now_iso
+            task["attempts"] = (task.get("attempts") or 0) + 1
+            if task.get("input"):
+                try:
+                    task["input"] = json.loads(task["input"])
+                except Exception:
+                    pass
+            return task
+        finally:
+            conn.close()
+
     def heartbeat_task(self, task_id: str) -> bool:
         """
         Touch heartbeat_at AND extend lease_expires_at for a running task.
