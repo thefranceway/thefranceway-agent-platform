@@ -456,7 +456,7 @@ TEMP_BY_PROFILE = {
 ARCHETYPE_CONFIG = {
     "Substrate": {
         "max_steps":        8,
-        "tool_mode":        "read_memory",
+        "tool_mode":        "all",
         "planning_first":   False,
         "reflection_heavy": False,
         "long_running":     False,
