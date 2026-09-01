@@ -537,6 +537,7 @@ class Orchestrator:
             # task was already claimed, just update output at the end
             pass
 
+        agent = None
         try:
             agent = make_agent(agent_type, provider=provider)
             if skills is not None:
@@ -564,13 +565,23 @@ class Orchestrator:
                     agent_id=getattr(agent, "agent_id", None),
                 )
 
+            # mabp_outcomes has no dedicated archetype/config column (schema
+            # lives in task_queue.py — out of scope here), so the archetype +
+            # per-archetype config are carried as a tagged entry inside the
+            # existing shadow_events JSON blob rather than adding a column.
+            shadow_summary = dict(result.get("shadow_events") or {"events": [], "events_detected": 0})
+            shadow_summary["events"] = list(shadow_summary.get("events", [])) + [{
+                "type":      "mabp_archetype_config",
+                "archetype": result.get("behavioral_profile"),
+                "config":    result.get("archetype_config"),
+            }]
             self.queue.log_mabp_outcome(
                 task_id            = task_id or "",
                 task_text          = task,
                 agent_type         = agent_type,
                 routing_layer      = routing_layer,
                 routing_confidence = routing_confidence,
-                shadow_summary     = result.get("shadow_events", {}) or {"events": [], "events_detected": 0},
+                shadow_summary     = shadow_summary,
                 had_error          = False,
             )
             _run_feedback(result)
@@ -586,13 +597,25 @@ class Orchestrator:
                 "task":       task,
                 "agent_type": agent_type,
             }
+            archetype = getattr(agent, "behavioral_profile", None) if agent is not None else None
+            archetype_config = None
+            if archetype:
+                try:
+                    from core.base_agent import ARCHETYPE_CONFIG
+                    archetype_config = ARCHETYPE_CONFIG.get(archetype)
+                except Exception:
+                    pass
             self.queue.log_mabp_outcome(
                 task_id            = task_id or "",
                 task_text          = task,
                 agent_type         = agent_type,
                 routing_layer      = routing_layer or "unknown",
                 routing_confidence = routing_confidence or 0.0,
-                shadow_summary     = {},
+                shadow_summary     = {"events": [{
+                    "type":      "mabp_archetype_config",
+                    "archetype": archetype,
+                    "config":    archetype_config,
+                }], "events_detected": 0},
                 had_error          = True,
             )
             _run_feedback(result)
