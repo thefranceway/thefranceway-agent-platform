@@ -439,6 +439,67 @@ TEMP_BY_PROFILE = {
     "Resident":    0.3,
 }
 
+# Per-archetype execution config — previously every archetype ran the
+# identical tool loop (BaseAgent.MAX_TOOL_ITERATIONS, full tool set) and
+# "different archetype" only meant "different paragraph in the system
+# prompt" (see _mabp_block below). BaseAgent.run() now reads this dict to
+# set the actual iteration cap and tool subset per run, keyed by
+# behavioral_profile like TEMP_BY_PROFILE above.
+#   max_steps        — hard cap on tool-loop iterations for this archetype.
+#   tool_mode         — "read_memory" restricts get_tools() to memory tools
+#                        (remember/recall) plus read-only-looking tools
+#                        (see _READ_TOOL_PREFIXES); "all" applies no filter.
+#   planning_first    — prepend a "state your plan before acting" instruction.
+#   reflection_heavy  — prepend a "reflect after each tool call" instruction.
+#   long_running      — archetype is expected to run long tool loops; carried
+#                        through to the mabp_outcomes log, no extra loop logic.
+ARCHETYPE_CONFIG = {
+    "Substrate": {
+        "max_steps":        8,
+        "tool_mode":        "read_memory",
+        "planning_first":   False,
+        "reflection_heavy": False,
+        "long_running":     False,
+    },
+    "Architect": {
+        "max_steps":        25,
+        "tool_mode":        "all",
+        "planning_first":   True,
+        "reflection_heavy": False,
+        "long_running":     False,
+    },
+    "Philosopher": {
+        "max_steps":        15,
+        "tool_mode":        "all",
+        "planning_first":   False,
+        "reflection_heavy": True,
+        "long_running":     False,
+    },
+    "Agent": {
+        "max_steps":        20,
+        "tool_mode":        "all",
+        "planning_first":   False,
+        "reflection_heavy": False,
+        "long_running":     False,
+    },
+    "Resident": {
+        "max_steps":        30,
+        "tool_mode":        "all",
+        "planning_first":   False,
+        "reflection_heavy": False,
+        "long_running":     True,
+    },
+}
+
+# Tool names always treated as "read + memory" under tool_mode "read_memory",
+# plus any tool name that looks read-only by naming convention. Subclasses
+# add their own tools (get_tools() is overridden per agent type) so this is a
+# naming-convention heuristic, not an exhaustive per-tool allowlist — a
+# subclass tool that mutates state but happens to be named e.g. "get_and_reset"
+# would slip through; none of the current agents' tools do.
+_READ_MEMORY_TOOL_NAMES = {"remember", "recall"}
+_READ_TOOL_PREFIXES     = ("read_", "get_", "list_", "search_", "fetch_", "view_", "check_")
+
 # ── JSON Vector Store ────────────────────────────────────────────────────────
 
 class JSONVectorStore:
@@ -1275,6 +1336,30 @@ class BaseAgent:
             },
         ]
 
+    def _archetype_config(self) -> dict:
+        """Per-archetype execution config for this agent's behavioral_profile.
+        Falls back to a config equivalent to pre-archetype behavior (class
+        default MAX_TOOL_ITERATIONS, no tool filtering) for any
+        behavioral_profile not in ARCHETYPE_CONFIG."""
+        return ARCHETYPE_CONFIG.get(self.behavioral_profile, {
+            "max_steps":        self.MAX_TOOL_ITERATIONS,
+            "tool_mode":        "all",
+            "planning_first":   False,
+            "reflection_heavy": False,
+            "long_running":     False,
+        })
+
+    def _filtered_tools(self, archetype_config: dict) -> list[dict]:
+        """Apply this run's archetype tool_mode to get_tools()."""
+        tools = self.get_tools()
+        if archetype_config.get("tool_mode") != "read_memory":
+            return tools
+        return [
+            t for t in tools
+            if t.get("name", "") in _READ_MEMORY_TOOL_NAMES
+            or t.get("name", "").startswith(_READ_TOOL_PREFIXES)
+        ]
+
     def execute_tool(self, tool_name: str, tool_input: dict) -> str:
         """
         Execute a tool call. Subclasses override to add their own tools,
@@ -1350,7 +1435,25 @@ class BaseAgent:
                 f"- {m['text']}" for m in memories
             )
 
+        # Per-archetype execution config — sets the real iteration cap and
+        # tool subset for this run (previously archetype only changed the
+        # prompt text below; see ARCHETYPE_CONFIG).
+        archetype_config = self._archetype_config()
+        max_steps        = archetype_config.get("max_steps", self.MAX_TOOL_ITERATIONS)
+        available_tools  = self._filtered_tools(archetype_config)
+
         system = self.system_prompt + self._mabp_block() + self._skill_block() + memory_block
+        if archetype_config.get("planning_first"):
+            system += (
+                "\n\nBefore your first tool call, state a brief plan (2-4 steps) "
+                "for how you will complete this task."
+            )
+        if archetype_config.get("reflection_heavy"):
+            system += (
+                "\n\nAfter each tool call, briefly reflect in 1-2 sentences on whether "
+                "the result moves you closer to completing the task before deciding "
+                "the next step."
+            )
         if context:
             system += f"\n\nContext: {json.dumps(context)}"
 
@@ -1358,7 +1461,7 @@ class BaseAgent:
         tool_calls  = []
         iterations  = 0
 
-        while iterations < self.MAX_TOOL_ITERATIONS:
+        while iterations < max_steps:
             iterations += 1
 
             # Token budget enforcement — prune oldest turns when context exceeds cap
@@ -1379,7 +1482,7 @@ class BaseAgent:
 
             # Provider-abstracted API call
             text_out, tool_blocks, stop_reason, raw_response = self._api_call(
-                system, messages, self.get_tools()
+                system, messages, available_tools
             )
 
             if stop_reason == "end_turn" or not tool_blocks:
@@ -1459,6 +1562,8 @@ class BaseAgent:
             "latency_ms":         latency_ms,
             "task_type":          task_type,
             "execution_verified": execution_verified,
+            "behavioral_profile": self.behavioral_profile,
+            "archetype_config":   archetype_config,
             "shadow_events":      (
                 self._shadow_monitor.summary() if self._shadow_monitor else None
             ),
