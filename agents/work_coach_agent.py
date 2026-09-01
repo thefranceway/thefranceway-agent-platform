@@ -1,30 +1,12 @@
 import os, subprocess, requests
-
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN","")
 BOT_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
-OWNER_CHAT_ID = 7049234595
-
-def ask_claude_subscription(prompt):
+def ask(p):
     try:
-        result = subprocess.run(
-            ["claude", "-p", prompt],
-            capture_output=True, text=True, timeout=60
-        )
-        out = result.stdout.strip()
-        return out if out else "Top 3 priorities for today?"
-    except Exception as e:
-        print(f"Claude CLI failed: {e}")
-        return "Top 3 priorities for today?"
-
-class WorkCoachAgent:
-    def run(self):
-        prompt = "Generate one short work coaching question about priorities. Just the question."
-        question = ask_claude_subscription(prompt)
-        if not BOT_TOKEN:
-            print(f"[DRY RUN] {question}")
-            return
-        requests.post(f"{BOT_API}/sendMessage", json={"chat_id": OWNER_CHAT_ID, "text": question}, timeout=10)
-        print(f"Sent via Pro subscription: {question}")
-
+        r = subprocess.run(["claude","-p",p], capture_output=True, text=True, timeout=60)
+        return r.stdout.strip() or "Top 3 priorities today?"
+    except: return "Top 3 priorities today?"
 if __name__ == "__main__":
-    WorkCoachAgent().run()
+    q = ask("One short work coaching question, just the question")
+    print(q)
+    if BOT_TOKEN: requests.post(f"{BOT_API}/sendMessage", json={"chat_id":7049234595,"text":q}, timeout=10)
