@@ -27,8 +27,6 @@ CONTENT_KNOWLEDGE = [
     ("thefranceway voice: behavioral researcher at the intersection of longevity, psychology, "
      "and agent design. Tone: precise, non-obvious, depth-seeking. Never hype. "
      "Lead with insight, not summary.", {"tag": "voice"}),
-    ("FRANC token: BJ8MySahjvB3XFrKWxhFR4wsnjpgqY4gGRmU9wXHLCvu. "
-     "On bonding curve, needs ~85 SOL. Narrative: behavioral identity token for AI agents.", {"tag": "franc"}),
     ("MABP: 5 archetypes (Architect/Substrate/Philosopher/Agent/Resident) + shadow module S1-S6. "
      "Empirical from Moltbook behavioral study. mabp.pages.dev for public reference.", {"tag": "mabp"}),
     ("Moltbook post format: short paragraphs, no headers, max 300 words. "
